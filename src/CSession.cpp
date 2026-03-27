@@ -6,158 +6,209 @@
 #include <json/value.h>
 #include <json/reader.h>
 #include "LogicSystem.h"
+#include <boost/asio/use_awaitable.hpp>
 
-CSession::CSession(boost::asio::io_context& io_context, CServer* server):
-	_socket(io_context), _server(server), _b_close(false),_b_head_parse(false){
-	boost::uuids::uuid  a_uuid = boost::uuids::random_generator()();
+using namespace std;
+using namespace boost::asio;
+
+CSession::CSession(boost::asio::io_context &io_context, CServer *server) : _socket(io_context), _server(server), _b_close(false), _b_head_parse(false)
+{
+	boost::uuids::uuid a_uuid = boost::uuids::random_generator()();
 	_uuid = boost::uuids::to_string(a_uuid);
 	_recv_head_node = make_shared<MsgNode>(HEAD_TOTAL_LEN);
 }
-CSession::~CSession() {
+
+CSession::~CSession()
+{
 	std::cout << "~CSession destruct" << endl;
 }
 
-tcp::socket& CSession::GetSocket() {
+tcp::socket &CSession::GetSocket()
+{
 	return _socket;
 }
 
-std::string& CSession::GetUuid() {
+std::string &CSession::GetUuid()
+{
 	return _uuid;
 }
 
-void CSession::Start(){
-	::memset(_data, 0, MAX_LENGTH);
-	_socket.async_read_some(boost::asio::buffer(_data, MAX_LENGTH), std::bind(&CSession::HandleRead, this, 
-		std::placeholders::_1, std::placeholders::_2, SharedSelf()));
+void CSession::Start()
+{
+	// å¯åŠ¨è¯»åç¨‹
+	boost::asio::co_spawn(_socket.get_executor(), HandleRead(), boost::asio::detached);
 }
 
-void CSession::Send(std::string msg, short msgid) {
+void CSession::StartCoroutine()
+{
+	// åŒæ—¶å¯åŠ¨å†™åç¨‹
+	boost::asio::co_spawn(_socket.get_executor(), HandleWrite(), boost::asio::detached);
+}
+
+void CSession::Send(std::string msg, short msgid)
+{
 	std::lock_guard<std::mutex> lock(_send_lock);
 	int send_que_size = _send_que.size();
-	if (send_que_size > MAX_SENDQUE) {
+	if (send_que_size > MAX_SENDQUE)
+	{
 		std::cout << "session: " << _uuid << " send que fulled, size is " << MAX_SENDQUE << endl;
 		return;
 	}
 
 	_send_que.push(make_shared<SendNode>(msg.c_str(), msg.length(), msgid));
-	if (send_que_size > 0) {
-		return;
+	// è§¦å‘å†™åç¨‹
+	if (send_que_size == 0)
+	{
+		boost::asio::co_spawn(_socket.get_executor(), HandleWrite(), boost::asio::detached);
 	}
-	auto& msgnode = _send_que.front();
-	boost::asio::async_write(_socket, boost::asio::buffer(msgnode->_data, msgnode->_total_len),
-		std::bind(&CSession::HandleWrite, this, std::placeholders::_1, SharedSelf()));
 }
 
-void CSession::Send(char* msg, short max_length, short msgid) {
+void CSession::Send(char *msg, short max_length, short msgid)
+{
 	std::lock_guard<std::mutex> lock(_send_lock);
 	int send_que_size = _send_que.size();
-	if (send_que_size > MAX_SENDQUE) {
+	if (send_que_size > MAX_SENDQUE)
+	{
 		std::cout << "session: " << _uuid << " send que fulled, size is " << MAX_SENDQUE << endl;
 		return;
 	}
 
 	_send_que.push(make_shared<SendNode>(msg, max_length, msgid));
-	if (send_que_size>0) {
-		return;
+	// è§¦å‘å†™åç¨‹
+	if (send_que_size == 0)
+	{
+		boost::asio::co_spawn(_socket.get_executor(), HandleWrite(), boost::asio::detached);
 	}
-	auto& msgnode = _send_que.front();
-	boost::asio::async_write(_socket, boost::asio::buffer(msgnode->_data, msgnode->_total_len), 
-		std::bind(&CSession::HandleWrite, this, std::placeholders::_1, SharedSelf()));
 }
 
-void CSession::Close() {
+void CSession::Close()
+{
 	_socket.close();
 	_b_close = true;
 }
 
-std::shared_ptr<CSession>CSession::SharedSelf() {
+std::shared_ptr<CSession> CSession::SharedSelf()
+{
 	return shared_from_this();
 }
 
-void CSession::HandleWrite(const boost::system::error_code& error, std::shared_ptr<CSession> shared_self) {
-	//Ôö¼ÓÒì³£´¦Àí
-	try {
-		if (!error) {
-			std::lock_guard<std::mutex> lock(_send_lock);
-			//cout << "send data " << _send_que.front()->_data+HEAD_LENGTH << endl;
-			_send_que.pop();
-			if (!_send_que.empty()) {
-				auto& msgnode = _send_que.front();
-				boost::asio::async_write(_socket, boost::asio::buffer(msgnode->_data, msgnode->_total_len),
-					std::bind(&CSession::HandleWrite, this, std::placeholders::_1, shared_self));
+boost::asio::awaitable<void> CSession::HandleWrite()
+{
+	try
+	{
+		while (true)
+		{
+			shared_ptr<SendNode> msgnode;
+			{
+				std::lock_guard<std::mutex> lock(_send_lock);
+				if (_send_que.empty())
+				{
+					co_return;
+				}
+				msgnode = _send_que.front();
+			}
+
+			try
+			{
+				co_await async_write(_socket,
+									 buffer(msgnode->_data, msgnode->_total_len),
+									 use_awaitable);
+			}
+			catch (const boost::system::system_error &ec)
+			{
+				std::cout << "handle write failed, error is " << ec.what() << endl;
+				Close();
+				_server->ClearSession(_uuid);
+				co_return;
+			}
+
+			{
+				std::lock_guard<std::mutex> lock(_send_lock);
+				_send_que.pop();
 			}
 		}
-		else {
-			std::cout << "handle write failed, error is " << error.what() << endl;
-			Close();
-			_server->ClearSession(_uuid);
-		}
 	}
-	catch (std::exception& e) {
-		std::cerr << "Exception code : " << e.what() << endl;
+	catch (std::exception &e)
+	{
+		std::cerr << "Exception code: " << e.what() << endl;
 	}
-	
 }
 
-void CSession::HandleRead(const boost::system::error_code& error, size_t  bytes_transferred, std::shared_ptr<CSession> shared_self){
-	try {
-		if (!error) {
-			//ÒÑ¾­ÒÆ¶¯µÄ×Ö·ûÊý
+boost::asio::awaitable<void> CSession::HandleRead()
+{
+	try
+	{
+		while (true)
+		{
+			size_t bytes_transferred = 0;
+			try
+			{
+				bytes_transferred = co_await _socket.async_read_some(
+					buffer(_data, MAX_LENGTH), use_awaitable);
+			}
+			catch (const boost::system::system_error &ec)
+			{
+				std::cout << "handle read failed, error is " << ec.what() << endl;
+				Close();
+				_server->ClearSession(_uuid);
+				co_return;
+			}
+
+			// å¤„ç†æŽ¥æ”¶åˆ°çš„æ•°æ®
 			int copy_len = 0;
-			while (bytes_transferred > 0) {
-				if (!_b_head_parse) {
-					//ÊÕµ½µÄÊý¾Ý²»×ãÍ·²¿´óÐ¡
-					if (bytes_transferred + _recv_head_node->_cur_len < HEAD_TOTAL_LEN) {
+			while (bytes_transferred > 0)
+			{
+				if (!_b_head_parse)
+				{
+					// æ”¶åˆ°çš„æ•°æ®ä¸å¤Ÿå¤´éƒ¨å¤§å°
+					if (bytes_transferred + _recv_head_node->_cur_len < HEAD_TOTAL_LEN)
+					{
 						memcpy(_recv_head_node->_data + _recv_head_node->_cur_len, _data + copy_len, bytes_transferred);
 						_recv_head_node->_cur_len += bytes_transferred;
-						::memset(_data, 0, MAX_LENGTH);
-						_socket.async_read_some(boost::asio::buffer(_data, MAX_LENGTH),
-							std::bind(&CSession::HandleRead, this, std::placeholders::_1, std::placeholders::_2, shared_self));
-						return;
+						memset(_data, 0, MAX_LENGTH);
+						break;
 					}
-					//ÊÕµ½µÄÊý¾Ý±ÈÍ·²¿¶à
-					//Í·²¿Ê£ÓàÎ´¸´ÖÆµÄ³¤¶È
+					// æ”¶åˆ°çš„æ•°æ®å¤Ÿå¤´éƒ¨
 					int head_remain = HEAD_TOTAL_LEN - _recv_head_node->_cur_len;
 					memcpy(_recv_head_node->_data + _recv_head_node->_cur_len, _data + copy_len, head_remain);
-					//¸üÐÂÒÑ´¦ÀíµÄdata³¤¶ÈºÍÊ£ÓàÎ´´¦ÀíµÄ³¤¶È
 					copy_len += head_remain;
 					bytes_transferred -= head_remain;
-					//»ñÈ¡Í·²¿MSGIDÊý¾Ý
+
+					// è§£æžå¤´éƒ¨ MSGID
 					short msg_id = 0;
 					memcpy(&msg_id, _recv_head_node->_data, HEAD_ID_LEN);
-					//ÍøÂç×Ö½ÚÐò×ª»¯Îª±¾µØ×Ö½ÚÐò
 					msg_id = boost::asio::detail::socket_ops::network_to_host_short(msg_id);
 					std::cout << "msg_id is " << msg_id << endl;
-					//id·Ç·¨
-					if (msg_id > MAX_LENGTH) {
+
+					if (msg_id > MAX_LENGTH)
+					{
 						std::cout << "invalid msg_id is " << msg_id << endl;
 						_server->ClearSession(_uuid);
-						return;
+						co_return;
 					}
+
 					short msg_len = 0;
-					memcpy(&msg_len, _recv_head_node->_data+HEAD_ID_LEN, HEAD_DATA_LEN);
-					//ÍøÂç×Ö½ÚÐò×ª»¯Îª±¾µØ×Ö½ÚÐò
+					memcpy(&msg_len, _recv_head_node->_data + HEAD_ID_LEN, HEAD_DATA_LEN);
 					msg_len = boost::asio::detail::socket_ops::network_to_host_short(msg_len);
 					std::cout << "msg_len is " << msg_len << endl;
-					//id·Ç·¨
-					if (msg_len > MAX_LENGTH) {
+
+					if (msg_len > MAX_LENGTH)
+					{
 						std::cout << "invalid data length is " << msg_len << endl;
 						_server->ClearSession(_uuid);
-						return;
+						co_return;
 					}
 
 					_recv_msg_node = make_shared<RecvNode>(msg_len, msg_id);
 
-					//ÏûÏ¢µÄ³¤¶ÈÐ¡ÓÚÍ·²¿¹æ¶¨µÄ³¤¶È£¬ËµÃ÷Êý¾ÝÎ´ÊÕÈ«£¬ÔòÏÈ½«²¿·ÖÏûÏ¢·Åµ½½ÓÊÕ½ÚµãÀï
-					if (bytes_transferred < msg_len) {
+					// æ¶ˆæ¯é•¿åº¦å°äºŽå¤´éƒ¨è§„å®šçš„é•¿åº¦ï¼Œè¯´æ˜Žæ¶ˆæ¯æœªå®Œå…¨åˆ°è¾¾ï¼Œæ”¾åˆ°æŽ¥æ”¶èŠ‚ç‚¹ä¸­
+					if (bytes_transferred < msg_len)
+					{
 						memcpy(_recv_msg_node->_data + _recv_msg_node->_cur_len, _data + copy_len, bytes_transferred);
 						_recv_msg_node->_cur_len += bytes_transferred;
-						::memset(_data, 0, MAX_LENGTH);
-						_socket.async_read_some(boost::asio::buffer(_data, MAX_LENGTH),
-							std::bind(&CSession::HandleRead, this, std::placeholders::_1, std::placeholders::_2, shared_self));
-						//Í·²¿´¦ÀíÍê³É
+						memset(_data, 0, MAX_LENGTH);
 						_b_head_parse = true;
-						return;
+						break;
 					}
 
 					memcpy(_recv_msg_node->_data + _recv_msg_node->_cur_len, _data + copy_len, msg_len);
@@ -165,66 +216,63 @@ void CSession::HandleRead(const boost::system::error_code& error, size_t  bytes_
 					copy_len += msg_len;
 					bytes_transferred -= msg_len;
 					_recv_msg_node->_data[_recv_msg_node->_total_len] = '\0';
-					//cout << "receive data is " << _recv_msg_node->_data << endl;
-					//´Ë´¦½«ÏûÏ¢Í¶µÝµ½Âß¼­¶ÓÁÐÖÐ
-					LogicSystem::GetInstance()->PostMsgToQue(make_shared<LogicNode>(shared_from_this(), _recv_msg_node));
-				
-					//¼ÌÐøÂÖÑ¯Ê£ÓàÎ´´¦ÀíÊý¾Ý
+
+					// æ­¤å¤„å°†æ¶ˆæ¯æŠ•é€’åˆ°é€»è¾‘å¤„ç†é˜Ÿåˆ—
+					LogicSystem::GetInstance()->PostMsgToQue(
+						make_shared<LogicNode>(shared_from_this(), _recv_msg_node));
+
+					// ç»§ç»­è¯»å‰©ä½™æœªè¯»å®Œçš„
 					_b_head_parse = false;
 					_recv_head_node->Clear();
-					if (bytes_transferred <= 0) {
-						::memset(_data, 0, MAX_LENGTH);
-						_socket.async_read_some(boost::asio::buffer(_data, MAX_LENGTH),
-							std::bind(&CSession::HandleRead, this, std::placeholders::_1, std::placeholders::_2, shared_self));
-						return;
+
+					if (bytes_transferred <= 0)
+					{
+						memset(_data, 0, MAX_LENGTH);
+						break;
 					}
 					continue;
 				}
 
-				//ÒÑ¾­´¦ÀíÍêÍ·²¿£¬´¦ÀíÉÏ´ÎÎ´½ÓÊÜÍêµÄÏûÏ¢Êý¾Ý
-				//½ÓÊÕµÄÊý¾ÝÈÔ²»×ãÊ£ÓàÎ´´¦ÀíµÄ
+				// å·²ç»è§£æžå®Œå¤´éƒ¨ï¼Œæ•°æ®æœªå®Œå…¨æŽ¥å—å®Œçš„
 				int remain_msg = _recv_msg_node->_total_len - _recv_msg_node->_cur_len;
-				if (bytes_transferred < remain_msg) {
+				if (bytes_transferred < remain_msg)
+				{
 					memcpy(_recv_msg_node->_data + _recv_msg_node->_cur_len, _data + copy_len, bytes_transferred);
 					_recv_msg_node->_cur_len += bytes_transferred;
-					::memset(_data, 0, MAX_LENGTH);
-					_socket.async_read_some(boost::asio::buffer(_data, MAX_LENGTH),
-						std::bind(&CSession::HandleRead, this, std::placeholders::_1, std::placeholders::_2, shared_self));
-					return;
+					memset(_data, 0, MAX_LENGTH);
+					break;
 				}
 				memcpy(_recv_msg_node->_data + _recv_msg_node->_cur_len, _data + copy_len, remain_msg);
 				_recv_msg_node->_cur_len += remain_msg;
 				bytes_transferred -= remain_msg;
 				copy_len += remain_msg;
 				_recv_msg_node->_data[_recv_msg_node->_total_len] = '\0';
-				//cout << "receive data is " << _recv_msg_node->_data << endl;
-				//´Ë´¦½«ÏûÏ¢Í¶µÝµ½Âß¼­¶ÓÁÐÖÐ
-				LogicSystem::GetInstance()->PostMsgToQue(make_shared<LogicNode>(shared_from_this(), _recv_msg_node));
-				
-				//¼ÌÐøÂÖÑ¯Ê£ÓàÎ´´¦ÀíÊý¾Ý
+
+				// æ­¤å¤„å°†æ¶ˆæ¯æŠ•é€’åˆ°é€»è¾‘å¤„ç†é˜Ÿåˆ—
+				LogicSystem::GetInstance()->PostMsgToQue(
+					make_shared<LogicNode>(shared_from_this(), _recv_msg_node));
+
+				// ç»§ç»­è¯»å‰©ä½™æœªè¯»å®Œçš„
 				_b_head_parse = false;
 				_recv_head_node->Clear();
-				if (bytes_transferred <= 0) {
-					::memset(_data, 0, MAX_LENGTH);
-					_socket.async_read_some(boost::asio::buffer(_data, MAX_LENGTH),
-						std::bind(&CSession::HandleRead, this, std::placeholders::_1, std::placeholders::_2, shared_self));
-					return;
+
+				if (bytes_transferred <= 0)
+				{
+					memset(_data, 0, MAX_LENGTH);
+					break;
 				}
-				continue;
 			}
 		}
-		else {
-			std::cout << "handle read failed, error is " << error.what() << endl;
-			Close();
-			_server->ClearSession(_uuid);
-		}
 	}
-	catch (std::exception& e) {
+	catch (std::exception &e)
+	{
 		std::cout << "Exception code is " << e.what() << endl;
+		Close();
+		_server->ClearSession(_uuid);
 	}
 }
 
-LogicNode::LogicNode(shared_ptr<CSession>  session, 
-	shared_ptr<RecvNode> recvnode):_session(session),_recvnode(recvnode) {
-	
+LogicNode::LogicNode(shared_ptr<CSession> session,
+					 shared_ptr<RecvNode> recvnode) : _session(session), _recvnode(recvnode)
+{
 }

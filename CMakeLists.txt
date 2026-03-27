@@ -1,8 +1,14 @@
 cmake_minimum_required(VERSION 3.10)
 project(ThreadPoolServer)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# GCC 需要 -fcoroutines 标志来支持协程
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fcoroutines")
+endif()
+
 
 # 查找 Boost 库
 find_package(Boost REQUIRED COMPONENTS system thread)
@@ -12,7 +18,6 @@ include_directories(/usr/include/jsoncpp)
 
 # 源文件
 set(SOURCES
-    src/main.cpp
     src/AsioThreadPool.cpp
     src/CSession.cpp
     src/CServer.cpp
@@ -20,9 +25,18 @@ set(SOURCES
     src/MsgNode.cpp
 )
 
-add_executable(ThreadPoolServer ${SOURCES})
+add_executable(ThreadPoolServer main_server.cpp ${SOURCES})
 
 target_link_libraries(ThreadPoolServer
+    Boost::system
+    Boost::thread
+    pthread
+    jsoncpp
+)
+
+
+add_executable(main_jsonclient main_jsonclient.cpp)
+target_link_libraries(main_jsonclient
     Boost::system
     Boost::thread
     pthread

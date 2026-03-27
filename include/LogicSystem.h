@@ -1,4 +1,6 @@
-#pragma once
+#ifndef LOGICSYSTEM_H_
+#define LOGICSYSTEM_H_
+
 #include "Singleton.h"
 #include <queue>
 #include <thread>
@@ -11,13 +13,15 @@
 #include <json/value.h>
 #include <json/reader.h>
 
-typedef  function<void(shared_ptr<CSession>, short msg_id, string msg_data)> FunCallBack;
-class LogicSystem:public Singleton<LogicSystem>
+typedef function<void(shared_ptr<CSession>, short msg_id, string msg_data)> FunCallBack;
+class LogicSystem : public Singleton<LogicSystem>
 {
 	friend class Singleton<LogicSystem>;
+
 public:
 	~LogicSystem();
-	void PostMsgToQue(shared_ptr < LogicNode> msg);
+	void PostMsgToQue(shared_ptr<LogicNode> msg);
+
 private:
 	LogicSystem();
 	void DealMsg();
@@ -31,3 +35,4 @@ private:
 	std::map<short, FunCallBack> _fun_callbacks;
 };
 
+#endif
