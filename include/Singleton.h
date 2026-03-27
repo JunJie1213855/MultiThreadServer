@@ -6,8 +6,6 @@
 #include <iostream>
 using namespace std;
 
-
-// 单例类
 template <typename T>
 class Singleton
 {

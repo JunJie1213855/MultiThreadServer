@@ -12,9 +12,11 @@ endif()
 
 # 查找 Boost 库
 find_package(Boost REQUIRED COMPONENTS system thread)
+find_package(jsoncpp REQUIRED)
 
-include_directories(${CMAKE_SOURCE_DIR}/include)
-include_directories(/usr/include/jsoncpp)
+include_directories(
+    ${CMAKE_SOURCE_DIR}/include
+)
 
 # 源文件
 set(SOURCES
@@ -31,7 +33,7 @@ target_link_libraries(ThreadPoolServer
     Boost::system
     Boost::thread
     pthread
-    jsoncpp
+    JsonCpp::JsonCpp
 )
 
 
@@ -40,5 +42,5 @@ target_link_libraries(main_jsonclient
     Boost::system
     Boost::thread
     pthread
-    jsoncpp
+    JsonCpp::JsonCpp
 )

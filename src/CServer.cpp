@@ -5,11 +5,11 @@
 
 using namespace boost::asio;
 
+// 构造函数，创建 acceptor 并启动 accept 协程
 CServer::CServer(boost::asio::io_context &io_context, short port) : _io_context(io_context), _port(port),
 																	_acceptor(io_context, tcp::endpoint(tcp::v4(), port))
 {
 	std::cout << "Server start success, listen on port : " << _port << std::endl;
-	// 启动协程 accept 循环
 	co_spawn(_io_context, StartAcceptLoop(), detached);
 }
 
@@ -18,21 +18,24 @@ CServer::~CServer()
 	std::cout << "Server destruct listen on port : " << _port << std::endl;
 }
 
+// 协程：accept 循环，处理新连接
 awaitable<void> CServer::StartAcceptLoop()
 {
 	while (true)
 	{
 		try
 		{
-			// 创建新的 CSession，它会创建一个新的 socket
+			// 创建新的 session
 			auto new_session = std::make_shared<CSession>(_io_context, this);
 			auto &socket = new_session->GetSocket();
 
 			// 协程方式 accept
 			co_await _acceptor.async_accept(socket, use_awaitable);
 
+			// 启动 session
 			new_session->Start();
 
+			// 保存 session
 			std::lock_guard<std::mutex> lock(_mutex);
 			_sessions.insert(make_pair(new_session->GetUuid(), new_session));
 		}
@@ -47,6 +50,7 @@ awaitable<void> CServer::StartAcceptLoop()
 	}
 }
 
+// 移除指定的 session
 void CServer::ClearSession(std::string uuid)
 {
 	std::lock_guard<std::mutex> lock(_mutex);

@@ -2,8 +2,13 @@
 
 using namespace std;
 
-LogicSystem::LogicSystem() : _b_stop(false)
+LogicSystem::LogicSystem() : _b_stop(false),
+							  _total_requests(0),
+							  _total_responses(0),
+							  _last_requests(0)
 {
+	_start_time = chrono::steady_clock::now();
+	_last_print_time = _start_time;
 	RegisterCallBacks();
 	_worker_thread = std::thread(&LogicSystem::DealMsg, this);
 }
@@ -13,13 +18,94 @@ LogicSystem::~LogicSystem()
 	_b_stop = true;
 	_consume.notify_one();
 	_worker_thread.join();
+	PrintStatistics();
 }
 
+// è®°å½•æ”¶åˆ°è¯·æ±‚
+void LogicSystem::RecordRequest()
+{
+	_total_requests++;
+}
+
+// è®°å½•å‘é€å“åº”
+void LogicSystem::RecordResponse()
+{
+	_total_responses++;
+}
+
+// è·å–æ€»è¯·æ±‚æ•°
+int64_t LogicSystem::GetTotalRequests()
+{
+	return _total_requests.load();
+}
+
+// è·å–æ€»å“åº”æ•°
+int64_t LogicSystem::GetTotalResponses()
+{
+	return _total_responses.load();
+}
+
+// è®¡ç®—å½“å‰ QPSï¼ˆæ¯ç§’å¤„ç†è¯·æ±‚æ•°ï¼‰
+double LogicSystem::GetQPS()
+{
+	auto now = chrono::steady_clock::now();
+	auto duration = chrono::duration_cast<chrono::seconds>(now - _last_print_time).count();
+
+	if (duration <= 0)
+		return 0;
+
+	// è®¡ç®—å¢é‡è¯·æ±‚æ•°
+	int64_t current_requests = _total_requests.load() - _last_requests.load();
+	_last_requests.store(_total_requests.load());
+	_last_print_time = now;
+
+	return (double)current_requests / duration;
+}
+
+// è®¡ç®—å›åŒ…å®Œæ•´ç‡
+double LogicSystem::GetResponseRate()
+{
+	int64_t req = _total_requests.load();
+	int64_t resp = _total_responses.load();
+
+	if (req == 0)
+		return 0;
+
+	return (double)resp / req * 100;
+}
+
+// æ‰“å°ç»Ÿè®¡ä¿¡æ¯
+void LogicSystem::PrintStatistics()
+{
+	auto now = chrono::steady_clock::now();
+	auto total_duration = chrono::duration_cast<chrono::seconds>(now - _start_time).count();
+
+	double avg_qps = (double)_total_requests.load() / (total_duration > 0 ? total_duration : 1);
+
+	std::cout << "========== Server Statistics ==========" << std::endl;
+	std::cout << "Total Requests:   " << _total_requests.load() << std::endl;
+	std::cout << "Total Responses:  " << _total_responses.load() << std::endl;
+	std::cout << "Response Rate:    " << GetResponseRate() << "%" << std::endl;
+	std::cout << "Average QPS:      " << avg_qps << std::endl;
+	std::cout << "Uptime:           " << total_duration << "s" << std::endl;
+	std::cout << "=========================================" << std::endl;
+}
+
+// é‡ç½®ç»Ÿè®¡
+void LogicSystem::ResetStatistics()
+{
+	_total_requests = 0;
+	_total_responses = 0;
+	_last_requests = 0;
+	_start_time = chrono::steady_clock::now();
+	_last_print_time = _start_time;
+}
+
+// æ·»åŠ æ¶ˆæ¯åˆ°å¤„ç†é˜Ÿåˆ—
 void LogicSystem::PostMsgToQue(shared_ptr<LogicNode> msg)
 {
 	std::unique_lock<std::mutex> unique_lk(_mutex);
 	_msg_que.push(msg);
-	// ÓÉ0±äÎª1Ôò·¢ËÍÍ¨ÖªĞÅºÅ
 	if (_msg_que.size() == 1)
 	{
 		unique_lk.unlock();
@@ -27,24 +113,25 @@ void LogicSystem::PostMsgToQue(shared_ptr<LogicNode> msg)
 	}
 }
 
+// æ¶ˆæ¯å¤„ç†çº¿ç¨‹å‡½æ•°
 void LogicSystem::DealMsg()
 {
 	for (;;)
 	{
 		std::unique_lock<std::mutex> unique_lk(_mutex);
-		// ÅĞ¶Ï¶ÓÁĞÎª¿ÕÔòÓÃÌõ¼ş±äÁ¿×èÈûµÈ´ı£¬²¢ÊÍ·ÅËø
+		// ç­‰å¾…æ¡ä»¶å˜é‡å”¤é†’
 		while (_msg_que.empty() && !_b_stop)
 		{
 			_consume.wait(unique_lk);
 		}
 
-		// ÅĞ¶ÏÊÇ·ñÎª¹Ø±Õ×´Ì¬£¬°ÑËùÓĞÂß¼­Ö´ĞĞÍêºóÔòÍË³öÑ­»·
+		// å¦‚æœåœæ­¢æ ‡å¿—ä¸º trueï¼Œå¤„ç†å®Œå‰©ä½™æ¶ˆæ¯åé€€å‡º
 		if (_b_stop)
 		{
 			while (!_msg_que.empty())
 			{
 				auto msg_node = _msg_que.front();
-				cout << "recv_msg id  is " << msg_node->_recvnode->_msg_id << endl;
+			 cout << "recv_msg id  is " << msg_node->_recvnode->_msg_id << endl;
 				auto call_back_iter = _fun_callbacks.find(msg_node->_recvnode->_msg_id);
 				if (call_back_iter == _fun_callbacks.end())
 				{
@@ -58,9 +145,9 @@ void LogicSystem::DealMsg()
 			break;
 		}
 
-		// Èç¹ûÃ»ÓĞÍ£·ş£¬ÇÒËµÃ÷¶ÓÁĞÖĞÓĞÊı¾İ
+		// å–å‡ºé˜Ÿé¦–æ¶ˆæ¯å¹¶å¤„ç†
 		auto msg_node = _msg_que.front();
-		cout << "recv_msg id  is " << msg_node->_recvnode->_msg_id << endl;
+	 cout << "recv_msg id  is " << msg_node->_recvnode->_msg_id << endl;
 		auto call_back_iter = _fun_callbacks.find(msg_node->_recvnode->_msg_id);
 		if (call_back_iter == _fun_callbacks.end())
 		{
@@ -73,14 +160,18 @@ void LogicSystem::DealMsg()
 	}
 }
 
+// æ³¨å†Œæ¶ˆæ¯å›è°ƒå‡½æ•°
 void LogicSystem::RegisterCallBacks()
 {
 	_fun_callbacks[MSG_HELLO_WORD] = std::bind(&LogicSystem::HelloWordCallBack, this,
 											   placeholders::_1, placeholders::_2, placeholders::_3);
 }
 
+// å¤„ç† HELLO_WORD æ¶ˆæ¯çš„å›è°ƒ
 void LogicSystem::HelloWordCallBack(shared_ptr<CSession> session, short msg_id, string msg_data)
 {
+	RecordRequest();
+
 	Json::Reader reader;
 	Json::Value root;
 	reader.parse(msg_data, root);
@@ -89,4 +180,6 @@ void LogicSystem::HelloWordCallBack(shared_ptr<CSession> session, short msg_id, 
 	root["data"] = "server has received msg, msg data is " + root["data"].asString();
 	std::string return_str = root.toStyledString();
 	session->Send(return_str, root["id"].asInt());
+
+	RecordResponse();
 }
