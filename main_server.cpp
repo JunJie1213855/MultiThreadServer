@@ -25,7 +25,8 @@ int main()
 						   {
 			io_context.stop();
 			pool->Stop(); 
-		is_running.store(false); });
+		is_running.store(false); 
+		std::cout << "Bye" << std::endl; });
 
 		// 创建服务器，监听 10086 端口
 		CServer s(pool->GetIOService(), 10086);

@@ -18,7 +18,9 @@ constexpr int MAX_SENDQUE = 1000;
 
 enum MSG_IDS
 {
-	MSG_HELLO_WORD = 1001
+	MSG_ID_MIN = 1000,
+	MSG_HELLO_WORD = 1001,
+	MSG_ID_MAX
 };
 
 #endif

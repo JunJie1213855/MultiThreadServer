@@ -21,7 +21,7 @@ CSession::CSession(boost::asio::io_context &io_context, CServer *server)
 
 CSession::~CSession()
 {
-    std::cout << "~CSession destruct" << endl;
+    // std::cout << "~CSession destruct" << endl;
 }
 
 tcp::socket &CSession::GetSocket()
@@ -148,7 +148,7 @@ awaitable<void> CSession::HandleRead()
             msg_id = boost::asio::detail::socket_ops::network_to_host_short(msg_id);
             std::cout << "msg_id is " << msg_id << endl;
 
-            if (msg_id > MAX_LENGTH)
+            if (msg_id <= MSG_ID_MIN || msg_id >= MSG_ID_MAX)
             {
                 std::cout << "invalid msg_id is " << msg_id << endl;
                 _server->ClearSession(_uuid);
