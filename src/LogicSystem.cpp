@@ -3,9 +3,9 @@
 using namespace std;
 
 LogicSystem::LogicSystem() : _b_stop(false),
-							  _total_requests(0),
-							  _total_responses(0),
-							  _last_requests(0)
+							 _total_requests(0),
+							 _total_responses(0),
+							 _last_requests(0)
 {
 	_start_time = chrono::steady_clock::now();
 	_last_print_time = _start_time;
@@ -131,7 +131,7 @@ void LogicSystem::DealMsg()
 			while (!_msg_que.empty())
 			{
 				auto msg_node = _msg_que.front();
-			 cout << "recv_msg id  is " << msg_node->_recvnode->_msg_id << endl;
+				cout << "recv_msg id  is " << msg_node->_recvnode->_msg_id << endl;
 				auto call_back_iter = _fun_callbacks.find(msg_node->_recvnode->_msg_id);
 				if (call_back_iter == _fun_callbacks.end())
 				{
@@ -147,7 +147,7 @@ void LogicSystem::DealMsg()
 
 		// 取出队首消息并处理
 		auto msg_node = _msg_que.front();
-	 cout << "recv_msg id  is " << msg_node->_recvnode->_msg_id << endl;
+		cout << "recv_msg id  is " << msg_node->_recvnode->_msg_id << endl;
 		auto call_back_iter = _fun_callbacks.find(msg_node->_recvnode->_msg_id);
 		if (call_back_iter == _fun_callbacks.end())
 		{

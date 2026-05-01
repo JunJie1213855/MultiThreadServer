@@ -39,6 +39,7 @@ private:
 	void RegisterCallBacks();
 	void HelloWordCallBack(shared_ptr<CSession>, short msg_id, string msg_data);
 
+private:
 	std::thread _worker_thread;
 	std::queue<shared_ptr<LogicNode>> _msg_que;
 	std::mutex _mutex;

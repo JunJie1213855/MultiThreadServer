@@ -12,10 +12,7 @@ using namespace std;
 using namespace boost::asio;
 
 CSession::CSession(boost::asio::io_context &io_context, CServer *server)
-    : _socket(io_context)
-    , _server(server)
-    , _b_close(false)
-    , _b_head_parse(false)
+    : _socket(io_context), _server(server), _b_close(false), _b_head_parse(false)
 {
     boost::uuids::uuid a_uuid = boost::uuids::random_generator()();
     _uuid = boost::uuids::to_string(a_uuid);
@@ -39,23 +36,21 @@ std::string &CSession::GetUuid()
 
 void CSession::Start()
 {
-    co_spawn(_socket.get_executor(),
-        [self = shared_from_this()]{ return self->HandleRead(); },
-        detached);
+    co_spawn(_socket.get_executor(), [self = shared_from_this()]
+             { return self->HandleRead(); }, detached);
 }
 
 void CSession::StartCoroutine()
 {
-    co_spawn(_socket.get_executor(),
-        [self = shared_from_this()]{ return self->HandleWrite(); },
-        detached);
+    co_spawn(_socket.get_executor(), [self = shared_from_this()]
+             { return self->HandleWrite(); }, detached);
 }
 
 void CSession::Send(std::string msg, short msgid)
 {
     std::lock_guard<std::mutex> lock(_send_lock);
     int send_que_size = _send_que.size();
-    if (send_que_size > MAX_SENDQUE)
+    if (send_que_size >= MAX_SENDQUE)
     {
         std::cout << "session: " << _uuid << " send que fulled, size is " << MAX_SENDQUE << endl;
         return;
@@ -64,9 +59,8 @@ void CSession::Send(std::string msg, short msgid)
     _send_que.push(make_shared<SendNode>(msg.c_str(), msg.length(), msgid));
     if (send_que_size == 0)
     {
-        co_spawn(_socket.get_executor(),
-            [self = shared_from_this()]{ return self->HandleWrite(); },
-            detached);
+        co_spawn(_socket.get_executor(), [self = shared_from_this()]
+                 { return self->HandleWrite(); }, detached);
     }
 }
 
@@ -83,9 +77,8 @@ void CSession::Send(char *msg, short max_length, short msgid)
     _send_que.push(make_shared<SendNode>(msg, max_length, msgid));
     if (send_que_size == 0)
     {
-        co_spawn(_socket.get_executor(),
-            [self = shared_from_this()]{ return self->HandleWrite(); },
-            detached);
+        co_spawn(_socket.get_executor(), [self = shared_from_this()]
+                 { return self->HandleWrite(); }, detached);
     }
 }
 
@@ -107,35 +100,26 @@ awaitable<void> CSession::HandleWrite()
         while (!_b_close)
         {
             shared_ptr<SendNode> msgnode;
+
+            // 获取消息
             {
                 std::lock_guard<std::mutex> lock(_send_lock);
                 if (_send_que.empty())
                 {
                     co_return;
                 }
-                msgnode = _send_que.front();
-            }
-
-            boost::system::error_code ec;
-            co_await async_write(_socket,
-                buffer(msgnode->_data, msgnode->_total_len),
-                use_awaitable);
-
-            if (ec)
-            {
-                std::cout << "handle write failed, error is " << ec.message() << endl;
-                co_return;
-            }
-
-            {
-                std::lock_guard<std::mutex> lock(_send_lock);
+                msgnode = std::move(_send_que.front());
                 _send_que.pop();
             }
+
+            co_await async_write(_socket,
+                                 buffer(msgnode->_data, msgnode->_total_len),
+                                 use_awaitable);
         }
     }
-    catch (std::exception &e)
+    catch (boost::system::error_code &ec)
     {
-        std::cerr << "Exception code: " << e.what() << endl;
+        std::cerr << "Handle Write Exception code: " << ec.what() << endl;
     }
 }
 
@@ -151,8 +135,8 @@ awaitable<void> CSession::HandleRead()
             // Read header
             _recv_head_node->Clear();
             std::size_t n = co_await async_read(_socket,
-                buffer(_recv_head_node->_data, HEAD_TOTAL_LEN),
-                use_awaitable);
+                                                buffer(_recv_head_node->_data, HEAD_TOTAL_LEN),
+                                                use_awaitable);
 
             if (n != HEAD_TOTAL_LEN)
             {
@@ -187,8 +171,8 @@ awaitable<void> CSession::HandleRead()
 
             // Read msg body
             n = co_await async_read(_socket,
-                buffer(_recv_msg_node->_data, msg_len),
-                use_awaitable);
+                                    buffer(_recv_msg_node->_data, msg_len),
+                                    use_awaitable);
 
             if (n != static_cast<std::size_t>(msg_len))
             {
@@ -202,9 +186,9 @@ awaitable<void> CSession::HandleRead()
                 make_shared<LogicNode>(shared_from_this(), _recv_msg_node));
         }
     }
-    catch (std::exception &e)
+    catch (boost::system::error_code &ec)
     {
-        std::cout << "Exception code is " << e.what() << endl;
+        std::cout << "Handle Read Exception code is " << ec.what() << endl;
         Close();
         _server->ClearSession(_uuid);
     }

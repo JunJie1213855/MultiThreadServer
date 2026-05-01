@@ -33,7 +33,7 @@ public:
 private:
 	boost::asio::awaitable<void> HandleRead();
 	boost::asio::awaitable<void> HandleWrite();
-	boost::asio::awaitable<void> ProcessMessage();
+	// boost::asio::awaitable<void> ProcessMessage();
 
 private:
 	tcp::socket _socket;

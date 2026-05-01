@@ -5,8 +5,9 @@
 #include "Singleton.h"
 class AsioThreadPool : public Singleton<AsioThreadPool>
 {
-public:
 	friend class Singleton<AsioThreadPool>;
+
+public:
 	~AsioThreadPool() {}
 	AsioThreadPool &operator=(const AsioThreadPool &) = delete;
 	AsioThreadPool(const AsioThreadPool &) = delete;

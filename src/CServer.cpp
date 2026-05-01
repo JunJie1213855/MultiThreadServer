@@ -6,14 +6,11 @@
 using namespace boost::asio;
 
 CServer::CServer(boost::asio::io_context &io_context, short port)
-    : _io_context(io_context)
-    , _port(port)
-    , _acceptor(io_context, tcp::endpoint(tcp::v4(), port))
+    : _io_context(io_context), _port(port), _acceptor(io_context, tcp::endpoint(tcp::v4(), port))
 {
     std::cout << "Server start success, listen on port : " << _port << std::endl;
-    co_spawn(_io_context,
-        [this]{ return StartAcceptLoop(); },
-        detached);
+    co_spawn(_io_context, [this]
+             { return StartAcceptLoop(); }, detached);
 }
 
 CServer::~CServer()
@@ -33,9 +30,10 @@ awaitable<void> CServer::StartAcceptLoop()
             co_await _acceptor.async_accept(socket, use_awaitable);
 
             new_session->Start();
-
-            std::lock_guard<std::mutex> lock(_mutex);
-            _sessions.insert(make_pair(new_session->GetUuid(), new_session));
+            {
+                std::lock_guard<std::mutex> lock(_mutex);
+                _sessions.insert(make_pair(new_session->GetUuid(), new_session));
+            }
         }
         catch (const boost::system::system_error &ec)
         {
