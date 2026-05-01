@@ -12,6 +12,7 @@ int main()
 {
 	try
 	{
+		std::atomic<bool> is_running{true};
 		// 获取 Asio 线程池单例
 		auto pool = AsioThreadPool::GetInstance();
 
@@ -20,17 +21,19 @@ int main()
 
 		// 设置信号处理（Ctrl+C 退出）
 		boost::asio::signal_set signals(io_context, SIGINT, SIGTERM);
-		signals.async_wait([pool, &io_context](auto, auto)
+		signals.async_wait([pool, &io_context, &is_running](auto, auto)
 						   {
 			io_context.stop();
-			pool->Stop(); });
+			pool->Stop(); 
+		is_running.store(false); });
 
 		// 创建服务器，监听 10086 端口
 		CServer s(pool->GetIOService(), 10086);
 
 		// 启动统计打印线程（每5秒打印一次）
-		std::thread stats_thread([]() {
-			while (true)
+		std::thread stats_thread([&is_running]()
+								 {
+			while (is_running.load(std::memory_order::relaxed))
 			{
 				std::this_thread::sleep_for(std::chrono::seconds(5));
 				auto logic = LogicSystem::GetInstance();
@@ -38,8 +41,7 @@ int main()
 						  << " [Total] " << logic->GetTotalRequests()
 						  << " [ResponseRate] " << logic->GetResponseRate() << "%"
 						  << std::endl;
-			}
-		});
+			} });
 
 		// 运行事件循环
 		io_context.run();

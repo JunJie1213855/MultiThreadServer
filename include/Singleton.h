@@ -11,10 +11,15 @@ class Singleton
 {
 protected:
 	Singleton() = default;
+
+	// 禁止拷贝
 	Singleton(const Singleton<T> &) = delete;
 	Singleton &operator=(const Singleton<T> &st) = delete;
 
-	static std::shared_ptr<T> _instance;
+	// 禁止移动
+	Singleton(Singleton<T> &&) = delete;
+	Singleton &operator=(Singleton<T> &&st) = delete;
+	~Singleton() = default;
 
 public:
 	static std::shared_ptr<T> GetInstance()
@@ -25,14 +30,9 @@ public:
 
 		return _instance;
 	}
-	void PrintAddress()
-	{
-		std::cout << _instance.get() << endl;
-	}
-	~Singleton()
-	{
-		std::cout << "this is singleton destruct" << std::endl;
-	}
+
+protected:
+	static std::shared_ptr<T> _instance;
 };
 
 template <typename T>

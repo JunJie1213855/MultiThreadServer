@@ -16,7 +16,7 @@ std::mutex cout_mutex;
 // 每个线程独立的客户端逻辑
 void client_thread(int thread_id) {
     try {
-        std::this_thread::sleep_for(std::chrono::seconds(1));
+        // std::this_thread::sleep_for(std::chrono::seconds(1));
 
         // 每个线程有自己的 ioc，完全独立，无竞争
         boost::asio::io_context ioc;
