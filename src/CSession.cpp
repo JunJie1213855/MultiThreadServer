@@ -11,277 +11,206 @@
 using namespace std;
 using namespace boost::asio;
 
-// 构造函数，初始化 session
-CSession::CSession(boost::asio::io_context &io_context, CServer *server) : _socket(io_context), _server(server), _b_close(false), _b_head_parse(false)
+CSession::CSession(boost::asio::io_context &io_context, CServer *server)
+    : _socket(io_context)
+    , _server(server)
+    , _b_close(false)
+    , _b_head_parse(false)
 {
-	boost::uuids::uuid a_uuid = boost::uuids::random_generator()();
-	_uuid = boost::uuids::to_string(a_uuid);
-	_recv_head_node = make_shared<MsgNode>(HEAD_TOTAL_LEN);
+    boost::uuids::uuid a_uuid = boost::uuids::random_generator()();
+    _uuid = boost::uuids::to_string(a_uuid);
+    _recv_head_node = make_shared<MsgNode>(HEAD_TOTAL_LEN);
 }
 
 CSession::~CSession()
 {
-	std::cout << "~CSession destruct" << endl;
+    std::cout << "~CSession destruct" << endl;
 }
 
-// 获取 socket 引用
 tcp::socket &CSession::GetSocket()
 {
-	return _socket;
+    return _socket;
 }
 
-// 获取 session 唯一标识
 std::string &CSession::GetUuid()
 {
-	return _uuid;
+    return _uuid;
 }
 
-// 启动 session，启动读协程
 void CSession::Start()
 {
-	boost::asio::co_spawn(_socket.get_executor(), HandleRead(), boost::asio::detached);
+    co_spawn(_socket.get_executor(),
+        [self = shared_from_this()]{ return self->HandleRead(); },
+        detached);
 }
 
-// 启动写协程
 void CSession::StartCoroutine()
 {
-	boost::asio::co_spawn(_socket.get_executor(), HandleWrite(), boost::asio::detached);
+    co_spawn(_socket.get_executor(),
+        [self = shared_from_this()]{ return self->HandleWrite(); },
+        detached);
 }
 
-// 发送消息（string 版本）
 void CSession::Send(std::string msg, short msgid)
 {
-	std::lock_guard<std::mutex> lock(_send_lock);
-	int send_que_size = _send_que.size();
-	if (send_que_size > MAX_SENDQUE)
-	{
-		std::cout << "session: " << _uuid << " send que fulled, size is " << MAX_SENDQUE << endl;
-		return;
-	}
+    std::lock_guard<std::mutex> lock(_send_lock);
+    int send_que_size = _send_que.size();
+    if (send_que_size > MAX_SENDQUE)
+    {
+        std::cout << "session: " << _uuid << " send que fulled, size is " << MAX_SENDQUE << endl;
+        return;
+    }
 
-	_send_que.push(make_shared<SendNode>(msg.c_str(), msg.length(), msgid));
-	if (send_que_size == 0)
-	{
-		boost::asio::co_spawn(_socket.get_executor(), HandleWrite(), boost::asio::detached);
-	}
+    _send_que.push(make_shared<SendNode>(msg.c_str(), msg.length(), msgid));
+    if (send_que_size == 0)
+    {
+        co_spawn(_socket.get_executor(),
+            [self = shared_from_this()]{ return self->HandleWrite(); },
+            detached);
+    }
 }
 
-// 发送消息（char* 版本）
 void CSession::Send(char *msg, short max_length, short msgid)
 {
-	std::lock_guard<std::mutex> lock(_send_lock);
-	int send_que_size = _send_que.size();
-	if (send_que_size > MAX_SENDQUE)
-	{
-		std::cout << "session: " << _uuid << " send que fulled, size is " << MAX_SENDQUE << endl;
-		return;
-	}
+    std::lock_guard<std::mutex> lock(_send_lock);
+    int send_que_size = _send_que.size();
+    if (send_que_size > MAX_SENDQUE)
+    {
+        std::cout << "session: " << _uuid << " send que fulled, size is " << MAX_SENDQUE << endl;
+        return;
+    }
 
-	_send_que.push(make_shared<SendNode>(msg, max_length, msgid));
-	if (send_que_size == 0)
-	{
-		boost::asio::co_spawn(_socket.get_executor(), HandleWrite(), boost::asio::detached);
-	}
+    _send_que.push(make_shared<SendNode>(msg, max_length, msgid));
+    if (send_que_size == 0)
+    {
+        co_spawn(_socket.get_executor(),
+            [self = shared_from_this()]{ return self->HandleWrite(); },
+            detached);
+    }
 }
 
-// 关闭 session
 void CSession::Close()
 {
-	_socket.close();
-	_b_close = true;
+    _socket.close();
+    _b_close = true;
 }
 
-// 获取自身的 shared_ptr
 std::shared_ptr<CSession> CSession::SharedSelf()
 {
-	return shared_from_this();
+    return shared_from_this();
 }
 
-// 写协程处理函数
-boost::asio::awaitable<void> CSession::HandleWrite()
+awaitable<void> CSession::HandleWrite()
 {
-	try
-	{
-		while (true)
-		{
-			shared_ptr<SendNode> msgnode;
-			{
-				std::lock_guard<std::mutex> lock(_send_lock);
-				if (_send_que.empty())
-				{
-					co_return;
-				}
-				msgnode = _send_que.front();
-			}
+    try
+    {
+        while (!_b_close)
+        {
+            shared_ptr<SendNode> msgnode;
+            {
+                std::lock_guard<std::mutex> lock(_send_lock);
+                if (_send_que.empty())
+                {
+                    co_return;
+                }
+                msgnode = _send_que.front();
+            }
 
-			try
-			{
-				co_await async_write(_socket,
-									 buffer(msgnode->_data, msgnode->_total_len),
-									 use_awaitable);
-			}
-			catch (const boost::system::system_error &ec)
-			{
-				std::cout << "handle write failed, error is " << ec.what() << endl;
-				Close();
-				_server->ClearSession(_uuid);
-				co_return;
-			}
+            boost::system::error_code ec;
+            co_await async_write(_socket,
+                buffer(msgnode->_data, msgnode->_total_len),
+                use_awaitable);
 
-			{
-				std::lock_guard<std::mutex> lock(_send_lock);
-				_send_que.pop();
-			}
-		}
-	}
-	catch (std::exception &e)
-	{
-		std::cerr << "Exception code: " << e.what() << endl;
-	}
+            if (ec)
+            {
+                std::cout << "handle write failed, error is " << ec.message() << endl;
+                co_return;
+            }
+
+            {
+                std::lock_guard<std::mutex> lock(_send_lock);
+                _send_que.pop();
+            }
+        }
+    }
+    catch (std::exception &e)
+    {
+        std::cerr << "Exception code: " << e.what() << endl;
+    }
 }
 
-// 读协程处理函数
-boost::asio::awaitable<void> CSession::HandleRead()
+awaitable<void> CSession::HandleRead()
 {
-	try
-	{
-		while (true)
-		{
-			size_t bytes_transferred = 0;
-			try
-			{
-				bytes_transferred = co_await _socket.async_read_some(
-					buffer(_data, MAX_LENGTH), use_awaitable);
-			}
-			catch (const boost::system::system_error &ec)
-			{
-				std::cout << "handle read failed, error is " << ec.what() << endl;
-				Close();
-				_server->ClearSession(_uuid);
-				co_return;
-			}
+    try
+    {
+        while (!_b_close)
+        {
+            short msg_id = 0;
+            short msg_len = 0;
 
-			int copy_len = 0;
-			while (bytes_transferred > 0)
-			{
-				// 解析头部阶段
-				if (!_b_head_parse)
-				{
-					// 数据不够头部大小，保存并继续读取
-					if (bytes_transferred + _recv_head_node->_cur_len < HEAD_TOTAL_LEN)
-					{
-						memcpy(_recv_head_node->_data + _recv_head_node->_cur_len, _data + copy_len, bytes_transferred);
-						_recv_head_node->_cur_len += bytes_transferred;
-						memset(_data, 0, MAX_LENGTH);
-						break;
-					}
-					// 数据够头部大小
-					int head_remain = HEAD_TOTAL_LEN - _recv_head_node->_cur_len;
-					memcpy(_recv_head_node->_data + _recv_head_node->_cur_len, _data + copy_len, head_remain);
-					copy_len += head_remain;
-					bytes_transferred -= head_remain;
+            // Read header
+            _recv_head_node->Clear();
+            std::size_t n = co_await async_read(_socket,
+                buffer(_recv_head_node->_data, HEAD_TOTAL_LEN),
+                use_awaitable);
 
-					// 解析消息 ID
-					short msg_id = 0;
-					memcpy(&msg_id, _recv_head_node->_data, HEAD_ID_LEN);
-					msg_id = boost::asio::detail::socket_ops::network_to_host_short(msg_id);
-					std::cout << "msg_id is " << msg_id << endl;
+            if (n != HEAD_TOTAL_LEN)
+            {
+                break;
+            }
 
-					if (msg_id > MAX_LENGTH)
-					{
-						std::cout << "invalid msg_id is " << msg_id << endl;
-						_server->ClearSession(_uuid);
-						co_return;
-					}
+            // Parse msg_id
+            memcpy(&msg_id, _recv_head_node->_data, HEAD_ID_LEN);
+            msg_id = boost::asio::detail::socket_ops::network_to_host_short(msg_id);
+            std::cout << "msg_id is " << msg_id << endl;
 
-					// 解析消息长度
-					short msg_len = 0;
-					memcpy(&msg_len, _recv_head_node->_data + HEAD_ID_LEN, HEAD_DATA_LEN);
-					msg_len = boost::asio::detail::socket_ops::network_to_host_short(msg_len);
-					std::cout << "msg_len is " << msg_len << endl;
+            if (msg_id > MAX_LENGTH)
+            {
+                std::cout << "invalid msg_id is " << msg_id << endl;
+                _server->ClearSession(_uuid);
+                co_return;
+            }
 
-					if (msg_len > MAX_LENGTH)
-					{
-						std::cout << "invalid data length is " << msg_len << endl;
-						_server->ClearSession(_uuid);
-						co_return;
-					}
+            // Parse msg_len
+            memcpy(&msg_len, _recv_head_node->_data + HEAD_ID_LEN, HEAD_DATA_LEN);
+            msg_len = boost::asio::detail::socket_ops::network_to_host_short(msg_len);
+            std::cout << "msg_len is " << msg_len << endl;
 
-					_recv_msg_node = make_shared<RecvNode>(msg_len, msg_id);
+            if (msg_len > MAX_LENGTH)
+            {
+                std::cout << "invalid data length is " << msg_len << endl;
+                _server->ClearSession(_uuid);
+                co_return;
+            }
 
-					// 消息未完全到达
-					if (bytes_transferred < msg_len)
-					{
-						memcpy(_recv_msg_node->_data + _recv_msg_node->_cur_len, _data + copy_len, bytes_transferred);
-						_recv_msg_node->_cur_len += bytes_transferred;
-						memset(_data, 0, MAX_LENGTH);
-						_b_head_parse = true;
-						break;
-					}
+            _recv_msg_node = make_shared<RecvNode>(msg_len, msg_id);
 
-					// 消息完整到达
-					memcpy(_recv_msg_node->_data + _recv_msg_node->_cur_len, _data + copy_len, msg_len);
-					_recv_msg_node->_cur_len += msg_len;
-					copy_len += msg_len;
-					bytes_transferred -= msg_len;
-					_recv_msg_node->_data[_recv_msg_node->_total_len] = '\0';
+            // Read msg body
+            n = co_await async_read(_socket,
+                buffer(_recv_msg_node->_data, msg_len),
+                use_awaitable);
 
-					// 投递到逻辑处理队列
-					LogicSystem::GetInstance()->PostMsgToQue(
-						make_shared<LogicNode>(shared_from_this(), _recv_msg_node));
+            if (n != static_cast<std::size_t>(msg_len))
+            {
+                break;
+            }
 
-					// 继续解析剩余数据
-					_b_head_parse = false;
-					_recv_head_node->Clear();
+            _recv_msg_node->_cur_len = msg_len;
+            _recv_msg_node->_data[msg_len] = '\0';
 
-					if (bytes_transferred <= 0)
-					{
-						memset(_data, 0, MAX_LENGTH);
-						break;
-					}
-					continue;
-				}
-
-				// 解析消息体阶段
-				int remain_msg = _recv_msg_node->_total_len - _recv_msg_node->_cur_len;
-				if (bytes_transferred < remain_msg)
-				{
-					memcpy(_recv_msg_node->_data + _recv_msg_node->_cur_len, _data + copy_len, bytes_transferred);
-					_recv_msg_node->_cur_len += bytes_transferred;
-					memset(_data, 0, MAX_LENGTH);
-					break;
-				}
-				memcpy(_recv_msg_node->_data + _recv_msg_node->_cur_len, _data + copy_len, remain_msg);
-				_recv_msg_node->_cur_len += remain_msg;
-				bytes_transferred -= remain_msg;
-				copy_len += remain_msg;
-				_recv_msg_node->_data[_recv_msg_node->_total_len] = '\0';
-
-				// 投递到逻辑处理队列
-				LogicSystem::GetInstance()->PostMsgToQue(
-					make_shared<LogicNode>(shared_from_this(), _recv_msg_node));
-
-				// 继续解析剩余数据
-				_b_head_parse = false;
-				_recv_head_node->Clear();
-
-				if (bytes_transferred <= 0)
-				{
-					memset(_data, 0, MAX_LENGTH);
-					break;
-				}
-			}
-		}
-	}
-	catch (std::exception &e)
-	{
-		std::cout << "Exception code is " << e.what() << endl;
-		Close();
-		_server->ClearSession(_uuid);
-	}
+            LogicSystem::GetInstance()->PostMsgToQue(
+                make_shared<LogicNode>(shared_from_this(), _recv_msg_node));
+        }
+    }
+    catch (std::exception &e)
+    {
+        std::cout << "Exception code is " << e.what() << endl;
+        Close();
+        _server->ClearSession(_uuid);
+    }
 }
 
 LogicNode::LogicNode(shared_ptr<CSession> session,
-					 shared_ptr<RecvNode> recvnode) : _session(session), _recvnode(recvnode)
+                     shared_ptr<RecvNode> recvnode) : _session(session), _recvnode(recvnode)
 {
 }
