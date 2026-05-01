@@ -24,7 +24,8 @@ awaitable<void> CServer::StartAcceptLoop()
     {
         try
         {
-            auto new_session = std::make_shared<CSession>(_io_context, this);
+            auto new_session = std::make_shared<CSession>(
+                AsioThreadPool::GetInstance()->GetIOService(), this);
             auto &socket = new_session->GetSocket();
 
             co_await _acceptor.async_accept(socket, use_awaitable);
