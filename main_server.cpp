@@ -13,23 +13,23 @@ int main()
 	try
 	{
 		std::atomic<bool> is_running{true};
-		// 获取 Asio 线程池单例
+
+		// 初始化 Asio 线程池（会在内部创建多个 io_context）
 		auto pool = AsioThreadPool::GetInstance();
 
-		// 创建 io_context
-		boost::asio::io_context io_context;
+		// 创建独立的 io_context 用于信号处理
+		boost::asio::io_context signal_io_ctx;
 
 		// 设置信号处理（Ctrl+C 退出）
-		boost::asio::signal_set signals(io_context, SIGINT, SIGTERM);
-		signals.async_wait([pool, &io_context, &is_running](auto, auto)
+		boost::asio::signal_set signals(signal_io_ctx, SIGINT, SIGTERM);
+		signals.async_wait([pool, &is_running](auto, auto)
 						   {
-			io_context.stop();
-			pool->Stop(); 
-		is_running.store(false); 
-		std::cout << "Bye" << std::endl; });
+			pool->Stop();
+			is_running.store(false);
+			std::cout << "Bye" << std::endl; });
 
-		// 创建服务器，监听 10086 端口
-		CServer s(pool->GetIOService(), 10086);
+		// 创建服务器，监听 10086 端口（acceptor 运行在独立线程）
+		CServer s(10086);
 
 		// 启动统计打印线程（每5秒打印一次）
 		std::thread stats_thread([&is_running]()
@@ -44,14 +44,15 @@ int main()
 						  << std::endl;
 			} });
 
-		// 运行事件循环
-		io_context.run();
+		// 运行信号监听事件循环
+		signal_io_ctx.run();
 
 		// 打印最终统计
 		LogicSystem::GetInstance()->PrintStatistics();
 
 		// 等待统计线程结束
-		stats_thread.join();
+		if (stats_thread.joinable())
+			stats_thread.join();
 		std::cout << "server exited " << std::endl;
 	}
 	catch (std::exception &e)
