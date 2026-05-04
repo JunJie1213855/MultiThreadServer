@@ -11,16 +11,18 @@ endif()
 
 
 option(BUILD_WITH_URING "build with io_uring ?" ON)
-option(BUILD_OPTIM "enable optimization (O3, SIMD auto-vectorization)" OFF)
+option(BUILD_OPTIM "enable optimization (O3, SIMD auto-vectorization)" ON)
 
 if(BUILD_WITH_URING)
     # 启用 io_uring
     add_definitions(-DBOOST_ASIO_HAS_IO_URING)
+    message("build with io_uring")
 endif()
 
 if(BUILD_OPTIM)
     # 高级优化
     add_compile_options(-O3 -march=native -ffast-math -ftree-vectorize)
+    message("enable optimization")
 endif()
 # 查找 Boost 库
 find_package(Boost REQUIRED COMPONENTS system thread)
