@@ -40,12 +40,6 @@ void CSession::Start()
              { return self->HandleRead(); }, detached);
 }
 
-void CSession::StartCoroutine()
-{
-    co_spawn(_socket.get_executor(), [self = shared_from_this()]
-             { return self->HandleWrite(); }, detached);
-}
-
 void CSession::Send(std::string msg, short msgid)
 {
     std::lock_guard<std::mutex> lock(_send_lock);

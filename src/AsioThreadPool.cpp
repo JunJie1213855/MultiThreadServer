@@ -1,5 +1,6 @@
 #include "AsioThreadPool.h"
 #include <iostream>
+#include <pthread.h>
 
 AsioThreadPool::AsioThreadPool(int threadNum) : _next_index(0), _threadNum(threadNum)
 {
@@ -15,6 +16,10 @@ AsioThreadPool::AsioThreadPool(int threadNum) : _next_index(0), _threadNum(threa
 	{
 		_threads.emplace_back([this, i]()
 		{
+			cpu_set_t cpuset;
+			CPU_ZERO(&cpuset);
+			CPU_SET(i, &cpuset);
+			pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
 			_io_contexts[i]->run();
 		});
 	}

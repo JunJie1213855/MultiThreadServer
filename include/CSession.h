@@ -24,7 +24,6 @@ public:
 	tcp::socket &GetSocket();
 	std::string &GetUuid();
 	void Start();
-	void StartCoroutine();
 	void Send(char *msg, short max_length, short msgid);
 	void Send(std::string msg, short msgid);
 	void Close();
