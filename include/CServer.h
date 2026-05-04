@@ -16,6 +16,7 @@ class CServer
 public:
 	CServer(short port);
 	~CServer();
+	boost::asio::io_context &GetIOContext() { return _io_context; }
 	void ClearSession(std::string);
 
 private:

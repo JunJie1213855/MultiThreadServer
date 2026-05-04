@@ -28,7 +28,7 @@ void client_thread(int thread_id) {
         boost::system::error_code error;
         sock.connect(remote_ep, error);
         if (error) {
-            std::lock_guard<std::mutex> lock(cout_mutex);
+            // std::lock_guard<std::mutex> lock(cout_mutex);
             std::cout << "connect failed: " << error.message() << "\n";
             return;  // void 函数，直接 return
         }
@@ -77,14 +77,14 @@ void client_thread(int thread_id) {
 
             reader.parse(std::string(msg, msg_len), root);
             {
-                std::lock_guard<std::mutex> lock(cout_mutex);
+                // std::lock_guard<std::mutex> lock(cout_mutex);
                 std::cout << "[thread " << thread_id << "] i=" << i
                           << " id=" << root["id"]
                           << " data=" << root["data"] << "\n";
             }
         }
     } catch (std::exception &e) {
-        std::lock_guard<std::mutex> lock(cout_mutex);
+        // std::lock_guard<std::mutex> lock(cout_mutex);
         std::cerr << "Exception: " << e.what() << "\n";
     }
 }
