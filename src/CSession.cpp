@@ -182,6 +182,7 @@ awaitable<void> CSession::HandleRead()
             _recv_msg_node->_cur_len = msg_len;
             _recv_msg_node->_data[msg_len] = '\0';
 
+            // 处理消息
             LogicSystem::GetInstance()->PostMsgToQue(
                 make_shared<LogicNode>(shared_from_this(), _recv_msg_node));
         }

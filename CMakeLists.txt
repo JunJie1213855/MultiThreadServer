@@ -10,6 +10,12 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
 endif()
 
 
+option(BUILD_WITH_URING "build with io_uring ?" ON)
+
+if(BUILD_WITH_URING)
+    # 启用 io_uring
+    add_definitions(-DBOOST_ASIO_HAS_IO_URING)
+endif()
 # 查找 Boost 库
 find_package(Boost REQUIRED COMPONENTS system thread)
 find_package(jsoncpp REQUIRED)
