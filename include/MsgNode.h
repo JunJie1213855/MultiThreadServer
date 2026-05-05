@@ -2,11 +2,11 @@
 #define MSGNODE_H_
 
 #include <string>
-#include "const.h"
 #include <iostream>
 #include <boost/asio.hpp>
-using namespace std;
+#include "const.h"
 using boost::asio::ip::tcp;
+
 class LogicSystem;
 class MsgNode
 {
@@ -48,12 +48,14 @@ private:
 class SendNode : public MsgNode
 {
 	friend class LogicSystem;
+	friend class CSession;
 
 public:
 	SendNode(const char *msg, short max_len, short msg_id);
 
 private:
 	short _msg_id;
+	int _retry_count;
 };
 
 #endif

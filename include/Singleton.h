@@ -4,7 +4,6 @@
 #include <memory>
 #include <mutex>
 #include <iostream>
-using namespace std;
 
 template <typename T>
 class Singleton
@@ -26,7 +25,7 @@ public:
 	{
 		static std::once_flag s_flag;
 		std::call_once(s_flag, [&]()
-					   { _instance = shared_ptr<T>(new T); });
+					   { _instance = std::shared_ptr<T>(new T); });
 
 		return _instance;
 	}

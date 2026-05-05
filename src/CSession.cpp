@@ -89,31 +89,42 @@ std::shared_ptr<CSession> CSession::SharedSelf()
 
 awaitable<void> CSession::HandleWrite()
 {
-    try
+    while (!_b_close && !_send_que.empty())
     {
-        while (!_b_close)
+        std::shared_ptr<SendNode> msgnode;
         {
-            shared_ptr<SendNode> msgnode;
-
-            // 获取消息
+            std::lock_guard<std::mutex> lock(_send_lock);
+            if (_send_que.empty())
             {
-                std::lock_guard<std::mutex> lock(_send_lock);
-                if (_send_que.empty())
-                {
-                    co_return;
-                }
-                msgnode = std::move(_send_que.front());
-                _send_que.pop();
+                co_return;
             }
+            msgnode = _send_que.front();
+        }
 
+        try
+        {
             co_await async_write(_socket,
                                  buffer(msgnode->_data, msgnode->_total_len),
                                  use_awaitable);
+            // 写入成功后才 pop
+            {
+                std::lock_guard<std::mutex> lock(_send_lock);
+                _send_que.pop();
+            }
         }
-    }
-    catch (boost::system::error_code &ec)
-    {
-        std::cerr << "Handle Write Exception code: " << ec.what() << endl;
+        catch (const boost::system::system_error &e)
+        {
+            std::lock_guard<std::mutex> lock(_send_lock);
+            if (msgnode->_retry_count >= 3)
+            {
+                std::cerr << "write failed after 3 retries, closing session" << endl;
+                _b_close = true;
+                _server->ClearSession(_uuid);
+                co_return;
+            }
+            msgnode->_retry_count++;
+            std::cerr << "write failed: " << e.what() << ", retry " << msgnode->_retry_count << "/3" << endl;
+        }
     }
 }
 
@@ -181,7 +192,7 @@ awaitable<void> CSession::HandleRead()
                 make_shared<LogicNode>(shared_from_this(), _recv_msg_node));
         }
     }
-    catch (boost::system::error_code &ec)
+    catch (const boost::system::system_error &ec)
     {
         std::cout << "Handle Read Exception code is " << ec.what() << endl;
         Close();
@@ -189,7 +200,7 @@ awaitable<void> CSession::HandleRead()
     }
 }
 
-LogicNode::LogicNode(shared_ptr<CSession> session,
-                     shared_ptr<RecvNode> recvnode) : _session(session), _recvnode(recvnode)
+LogicNode::LogicNode(std::shared_ptr<CSession> session,
+                     std::shared_ptr<RecvNode> recvnode) : _session(session), _recvnode(recvnode)
 {
 }

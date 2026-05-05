@@ -2,11 +2,11 @@
 #define ASIOTHREADPOOL_H_
 
 #include <boost/asio.hpp>
-#include "Singleton.h"
 #include <vector>
 #include <memory>
 #include <thread>
 #include <atomic>
+#include "Singleton.h"
 
 class AsioThreadPool : public Singleton<AsioThreadPool>
 {
