@@ -24,9 +24,21 @@ if(BUILD_OPTIM)
     add_compile_options(-O3 -march=native -ffast-math -ftree-vectorize)
     message("enable optimization")
 endif()
+
+
 # 查找 Boost 库
 find_package(Boost REQUIRED COMPONENTS system thread)
 find_package(jsoncpp REQUIRED)
+find_package(jemalloc)
+if(jemalloc_FOUND)
+    message(STATUS "jemalloc found: ${jemalloc_LIBRARIES}")
+    add_definitions(-DUSE_JEMALLOC)
+    set(EXTRA_LIBS ${jemalloc_LIBRARIES})
+else()
+    message(STATUS "jemalloc not found, skipping")
+    set(EXTRA_LIBS "")
+endif()
+
 
 include_directories(
     ${CMAKE_SOURCE_DIR}/include
@@ -48,6 +60,7 @@ target_link_libraries(ThreadPoolServer
     Boost::thread
     pthread
     JsonCpp::JsonCpp
+    ${EXTRA_LIBS}
 )
 
 
