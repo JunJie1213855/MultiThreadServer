@@ -24,17 +24,11 @@ public:
 
 private:
 	LogicSystem();
-	void DealMsg();
 	void RegisterCallBacks();
-	void HelloWordCallBack(std::shared_ptr<CSession>, short msg_id, std::string msg_data);
+	void HelloWordCallBack(std::shared_ptr<CSession> session, short msg_id, std::string msg_data);
 
 private:
-	std::thread _worker_thread;
-	std::queue<std::shared_ptr<LogicNode>> _msg_que;
-	std::mutex _mutex;
-	std::condition_variable _consume;
-	bool _b_stop;
-	std::map<short, FunCallBack> _fun_callbacks;
+	std::map<short, FunCallBack> _fun_callbacks; // 存储 msgid 对应的处理方法函数
 };
 
 #endif

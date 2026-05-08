@@ -21,7 +21,6 @@ CSession::CSession(boost::asio::io_context &io_context, CServer *server)
 
 CSession::~CSession()
 {
-    // std::cout << "~CSession destruct" << endl;
 }
 
 tcp::socket &CSession::GetSocket()
@@ -42,44 +41,51 @@ void CSession::Start()
 
 void CSession::Send(std::string msg, short msgid)
 {
-    std::lock_guard<std::mutex> lock(_send_lock);
-    int send_que_size = _send_que.size();
-    if (send_que_size >= MAX_SENDQUE)
+    boost::asio::post(_socket.get_executor(), [self = shared_from_this(), msg = std::move(msg), msgid]() mutable
+                      {
+    int send_que_size = self->_send_que.size();
+    if (send_que_size > MAX_SENDQUE)
     {
-        std::cout << "session: " << _uuid << " send que fulled, size is " << MAX_SENDQUE << endl;
+        std::cout << "session: " << self->_uuid << " send que fulled, size is " << MAX_SENDQUE << endl;
         return;
     }
 
-    _send_que.push(make_shared<SendNode>(msg.c_str(), msg.length(), msgid));
+    self->_send_que.push(make_shared<SendNode>(msg.c_str(), msg.length(), msgid));
     if (send_que_size == 0) // 如果队列深度数量为 0，说明没有handlewrite协程了
     {
-        co_spawn(_socket.get_executor(), [self = shared_from_this()]
+        co_spawn(self->_socket.get_executor(), [self]
                  { return self->HandleWrite(); }, detached);
-    }
+    } });
 }
 
 void CSession::Send(char *msg, short max_length, short msgid)
 {
-    std::lock_guard<std::mutex> lock(_send_lock);
-    int send_que_size = _send_que.size();
+    boost::asio::post(_socket.get_executor(), [self = shared_from_this(), msg = std::move(msg), max_length, msgid]() mutable
+                      {
+    int send_que_size = self->_send_que.size();
     if (send_que_size > MAX_SENDQUE)
     {
-        std::cout << "session: " << _uuid << " send que fulled, size is " << MAX_SENDQUE << endl;
+        std::cout << "session: " << self->_uuid << " send que fulled, size is " << MAX_SENDQUE << endl;
         return;
     }
 
-    _send_que.push(make_shared<SendNode>(msg, max_length, msgid));
+    self->_send_que.push(make_shared<SendNode>(msg, max_length, msgid));
     if (send_que_size == 0) // 如果队列深度数量为 0，说明没有handlewrite协程了
     {
-        co_spawn(_socket.get_executor(), [self = shared_from_this()]
+        co_spawn(self->_socket.get_executor(), [self]
                  { return self->HandleWrite(); }, detached);
-    }
+    } });
 }
 
 void CSession::Close()
 {
-    _socket.close();
-    _b_close = true;
+    boost::asio::post(_socket.get_executor(), [self = shared_from_this()]
+                      {
+        if(self->_b_close) return;
+        self->_b_close = true;
+        boost::system::error_code ec;
+        self->_socket.close(ec); 
+        self->_server->ClearSession(self->GetUuid()); });
 }
 
 std::shared_ptr<CSession> CSession::SharedSelf()
@@ -89,42 +95,45 @@ std::shared_ptr<CSession> CSession::SharedSelf()
 
 awaitable<void> CSession::HandleWrite()
 {
-    while (!_b_close && !_send_que.empty()) // 不停止且队列不为空
+    while (!_b_close) // 不停止且队列不为空
     {
+        if (_send_que.empty())
+            co_return;
+
         std::shared_ptr<SendNode> msgnode;
+        msgnode = _send_que.front();
+
+        bool success = false;
+        for (int retry = 0; retry <= 3 && !_b_close; ++retry)
         {
-            std::lock_guard<std::mutex> lock(_send_lock);
-            if (_send_que.empty())
+            if (retry > 0) // 重试三次
             {
+                boost::asio::steady_timer t(_socket.get_executor());
+                t.expires_after(std::chrono::milliseconds(50 * retry));
+                co_await t.async_wait(boost::asio::use_awaitable); // 等待
+            }
+
+            auto [ec, n] = co_await async_write(_socket,
+                                                buffer(msgnode->_data, msgnode->_total_len),
+                                                as_tuple(use_awaitable));
+
+            if (!ec)
+            {
+                success = true;
+                break;
+            }
+
+            if (retry == 3)
+            {
+                std::cout << "could not connect the client, close the session" << std::endl;
+                Close();
+                // _server->ClearSession(_uuid);
                 co_return;
             }
-            msgnode = _send_que.front();
         }
 
-        try
-        {
-            co_await async_write(_socket,
-                                 buffer(msgnode->_data, msgnode->_total_len),
-                                 use_awaitable);
-            // 写入成功后才 pop
-            {
-                std::lock_guard<std::mutex> lock(_send_lock);
-                _send_que.pop();
-            }
-        }
-        catch (const boost::system::system_error &e)
-        {
-            std::lock_guard<std::mutex> lock(_send_lock);
-            if (msgnode->_retry_count >= 3)
-            {
-                std::cerr << "write failed after 3 retries, closing session" << endl;
-                _b_close = true;
-                _server->ClearSession(_uuid);
-                co_return;
-            }
-            msgnode->_retry_count++;
-            std::cerr << "write failed: " << e.what() << ", retry " << msgnode->_retry_count << "/3" << endl;
-        }
+        if (success)
+            _send_que.pop();
     }
 }
 
@@ -148,13 +157,14 @@ awaitable<void> CSession::HandleRead()
         {
             std::cout << "Handle Read Exception code is " << ec.what() << endl;
             Close();
-            _server->ClearSession(_uuid);
+            // _server->ClearSession(_uuid);
             co_return;
         }
 
         if (n != HEAD_TOTAL_LEN)
         {
-            break;
+            // break;
+            co_return;
         }
 
         // Parse msg_id
@@ -194,7 +204,7 @@ awaitable<void> CSession::HandleRead()
         {
             std::cout << "Handle Read Exception code is " << ec.what() << endl;
             Close();
-            _server->ClearSession(_uuid);
+            // _server->ClearSession(_uuid);
             co_return;
         }
 

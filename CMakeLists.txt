@@ -1,4 +1,6 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.20)
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
+
 project(ThreadPoolServer)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -29,14 +31,13 @@ endif()
 # 查找 Boost 库
 find_package(Boost REQUIRED COMPONENTS system thread)
 find_package(jsoncpp REQUIRED)
-find_package(jemalloc)
-if(jemalloc_FOUND)
-    message(STATUS "jemalloc found: ${jemalloc_LIBRARIES}")
-    add_definitions(-DUSE_JEMALLOC)
-    set(EXTRA_LIBS ${jemalloc_LIBRARIES})
+
+# 查找 jemalloc（通过 find_library）
+find_library(JEMALLOC_LIBRARY NAMES jemalloc)
+if(JEMALLOC_LIBRARY)
+    message(STATUS "jemalloc found: ${JEMALLOC_LIBRARY}")
 else()
-    message(STATUS "jemalloc not found, skipping")
-    set(EXTRA_LIBS "")
+    message(STATUS "jemalloc not found, using system malloc")
 endif()
 
 
@@ -60,7 +61,7 @@ target_link_libraries(ThreadPoolServer
     Boost::thread
     pthread
     JsonCpp::JsonCpp
-    ${EXTRA_LIBS}
+    ${JEMALLOC_LIBRARY}
 )
 
 

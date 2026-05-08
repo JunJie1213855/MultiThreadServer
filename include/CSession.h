@@ -40,7 +40,7 @@ private:
 	CServer *_server;
 	bool _b_close;
 	std::queue<std::shared_ptr<SendNode>> _send_que;
-	std::mutex _send_lock;
+	// std::mutex _send_lock;
 	std::shared_ptr<RecvNode> _recv_msg_node;
 	bool _b_head_parse;
 	std::shared_ptr<MsgNode> _recv_head_node;
