@@ -22,6 +22,7 @@ jobs:
             libboost-system-dev libboost-thread-dev \
             rapidjson-dev \
             liburing-dev \
+            libjemalloc-dev \
             cppcheck
 
       - name: Configure
@@ -66,7 +67,8 @@ jobs:
           sudo apt-get install -y \
             gcc-13 g++-13 \
             libboost-system-dev libboost-thread-dev \
-            libjsoncpp-dev
+            libjsoncpp-dev \
+            libjemalloc-dev \
 
       - name: Configure
         run: |
