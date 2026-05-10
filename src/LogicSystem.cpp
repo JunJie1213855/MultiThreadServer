@@ -37,8 +37,6 @@ void LogicSystem::HelloWordCallBack(shared_ptr<CSession> session, short msg_id, 
 	Json::Reader reader;
 	Json::Value root;
 	reader.parse(msg_data, root);
-	std::cout << "recevie msg id  is " << root["id"].asInt() << " msg data is "
-			  << root["data"].asString() << endl;
 	root["data"] = "server has received msg, msg data is " + root["data"].asString();
 	// std::string return_str = root.toStyledString();
 	Json::StreamWriterBuilder builder;

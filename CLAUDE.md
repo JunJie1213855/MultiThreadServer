@@ -2,110 +2,61 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Build Commands
+## Build & Run
 
 ```bash
-mkdir -p build && cd build && cmake .. && make
+# Configure + build (out-of-tree)
+mkdir -p build && cd build
+cmake ..
+make -j
+
+# Run server (listens on hardcoded port 10086)
+./ThreadPoolServer
+
+# Run load-test client (200 threads × 500 round-trips against 127.0.0.1:10086)
+./main_jsonclient
 ```
 
-Targets: `ThreadPoolServer` (server), `main_jsonclient` (test client)
+CMake options (defined in `CMakeLists.txt`):
+- `BUILD_WITH_URING=ON` (default) — defines `BOOST_ASIO_HAS_IO_URING`. Disable on systems without liburing.
+- `BUILD_OPTIM=ON` (default) — adds `-O3 -march=native -ffast-math -ftree-vectorize`. Disable for debug builds.
+
+Compiler requirements: GCC 13+ (the build forces `-fcoroutines` for GCC; C++20 stackless coroutines are required throughout). Dependencies: Boost ≥ 1.70 (`system`, `thread`), JsonCpp, optional jemalloc (auto-detected via `find_library`).
+
+There is no test target wired up in CMake — `main_jsonclient` is the de-facto load test.
 
 ## Architecture
 
-**Boost.Asio + C++20 stackless coroutine TCP server** with per-session affinity.
+This is a TCP server built on Boost.Asio C++20 stackless coroutines, organized around the **one-loop-per-thread** pattern. Understanding the threading model is essential before changing any session/IO code.
 
-```
-main_server.cpp
-    ├── AsioThreadPool (singleton)     // Multiple io_contexts, each in own thread
-    │   ├── _io_contexts[0] ── thread 0
-    │   ├── _io_contexts[1] ── thread 1
-    │   └── ...
-    ├── CServer (acceptor thread)      // Own io_context for listening
-    │   └── StartAcceptLoop()          // round-robins to pool for new sessions
-    └── CSession (per-session)         // Each session bound to ONE io_context
-        ├── HandleRead()
-        └── HandleWrite()
-```
+### Threading model
 
-**Key design**: Thread pool (`AsioThreadPool`) manages N `io_context` instances (N = hardware concurrency). `CServer`'s acceptor runs on a dedicated thread. When a new connection is accepted, it is assigned to an `io_context` via round-robin (`GetNextIOService()`). All async operations for that session run on the same `io_context`/thread, benefiting CPU cache locality.
+- `AsioThreadPool` (singleton, `src/AsioThreadPool.cpp`) creates one `io_context` per hardware thread, each owned by a dedicated `std::thread` pinned to its core via `pthread_setaffinity_np`. A `boost::asio::io_context::work` per context keeps the loops alive until `Stop()`.
+- `CServer` runs **its own** `io_context` on a separate `_acceptor_thread` — it is *not* part of the pool. The acceptor coroutine `StartAcceptLoop()` calls `pool->GetNextIOService()` to round-robin assign each new `CSession` to a pool io_context, then awaits `async_accept` on the new session's socket.
+- Once a `CSession` is constructed against a pool io_context, **every operation on that session must run on that same executor**. This is why `Send()`, `Close()`, and `LogicSystem::PostMsgToQue` all wrap their bodies in `boost::asio::post(_socket.get_executor(), ...)`. The `_send_que` and `_b_close` flag are accessed without locks because they are only ever touched on the session's own thread.
 
-**Session assignment flow**:
-1. `CServer::StartAcceptLoop()` accepts connection
-2. Calls `pool->GetNextIOService()` to get next `io_context`
-3. Creates `CSession` with that `io_context`
-4. Session's `HandleRead()`/`HandleWrite()` coroutines run on that dedicated thread
+When modifying session state or adding new entry points to `CSession`, preserve this invariant: cross-thread callers must `post` onto the session's executor; same-thread callers may touch state directly.
 
-## Message Protocol
+### Wire protocol
 
-`[2 bytes msg_id][2 bytes length][data]`
+Frames are `[msg_id:2][length:2][body:N]` with `msg_id` and `length` in **network byte order**. `CSession::HandleRead` reads the 4-byte head into `_recv_head_node`, validates `msg_id` is in `(MSG_ID_MIN, MSG_ID_MAX)` and `length ≤ MAX_LENGTH` (2048), then reads the body and posts a `LogicNode` to `LogicSystem`. Constants live in `include/const.h`; new message types go in the `MSG_IDS` enum.
 
-- Header: `HEAD_TOTAL_LEN = 4` bytes (`HEAD_ID_LEN=2` + `HEAD_DATA_LEN=2`)
-- msg_id: network byte order, valid range `1001` (`MSG_HELLO_WORD`)
-- msg_len: body size, max `MAX_LENGTH = 2048`
+### Logic dispatch
 
-## Key Files
+`LogicSystem` (singleton) holds a `msg_id → callback` map populated by `RegisterCallBacks()`. `PostMsgToQue` does **not** queue — it immediately `post`s the callback onto the session's own executor. So message handlers execute on the same thread that did the read, which means a handler calling `session->Send(...)` is already on the right executor (the inner `post` in `Send` is still required because external callers may not be).
 
-| File | Purpose |
-|------|---------|
-| `include/AsioThreadPool.h` | Thread pool — owns multiple `io_context`s, `GetNextIOService()` for round-robin |
-| `include/CSession.h` | Per-client session; `HandleRead()`/`HandleWrite()` coroutines |
-| `include/CServer.h` | Acceptor — runs `StartAcceptLoop()` on dedicated thread |
-| `include/const.h` | Protocol constants and `MSG_IDS` enum |
-| `src/CSession.cpp` | `HandleRead()` and `HandleWrite()` coroutine logic |
-| `BugReport.md` | **Known bugs** — read before making changes |
+To add a new message type: add an entry to `MSG_IDS`, add a member function in `LogicSystem`, and bind it in `RegisterCallBacks()`.
 
-## Constants (const.h)
+### Send path
 
-```cpp
-MAX_LENGTH = 2048       // max body size
-HEAD_TOTAL_LEN = 4      // header size in bytes
-HEAD_ID_LEN = 2         // msg_id field size
-HEAD_DATA_LEN = 2       // msg_len field size
-MAX_SENDQUE = 1000      // send queue high watermark
-MSG_ID_MIN = 1000
-MSG_HELLO_WORD = 1001
-MSG_ID_MAX = ...
-```
+`CSession::Send` enqueues a `SendNode` and spawns `HandleWrite` **only when the queue was previously empty** — a single writer coroutine drains the queue until empty, then exits. Subsequent `Send` calls re-spawn it. `HandleWrite` retries `async_write` up to 3 times with backoff (`50ms × retry`) before calling `Close()`. Don't add a parallel writer; the empty-queue check is the concurrency guard.
 
-## Critical Patterns
+### Lifetime
 
-**Starting a session coroutine:**
-```cpp
-void CSession::Start() {
-    co_spawn(_socket.get_executor(), [self = shared_from_this()]
-             { return self->HandleRead(); }, detached);
-}
-```
+Sessions are kept alive by `_sessions` (keyed by UUID) on `CServer` and by `shared_from_this()` captures in spawned coroutines. `CServer::ClearSession` posts the erase onto the acceptor's executor to avoid contending with the accept loop. `Close()` is idempotent via `_b_close`.
 
-**Round-robin session assignment:**
-```cpp
-auto &io_ctx = pool->GetNextIOService();
-auto new_session = std::make_shared<CSession>(io_ctx, this);
-```
+## Repo notes
 
-**Send queue pattern** (lock + check + spawn):
-```cpp
-void CSession::Send(std::string msg, short msgid) {
-    lock_guard<mutex> lock(_send_lock);
-    bool need_spawn = _send_que.empty();
-    _send_que.push(make_shared<SendNode>(...));
-    if (need_spawn) {
-        co_spawn(_socket.get_executor(), [self = shared_from_this()]
-                 { return self->HandleWrite(); }, detached);
-    }
-}
-```
-
-## Known Issues
-
-See `BugReport.md` for documented bugs. Known critical issues:
-1. `HandleWrite` uses `use_awaitable` but checks `error_code` — error handling is broken
-2. Send queue race: `front()` then `pop()` outside lock in `HandleWrite`
-3. `stats_thread` has no退出机制, causes `join()` to hang
-4. `msg_id` validation uses `MAX_LENGTH` instead of valid range check
-
-## Dependencies
-
-- Boost >= 1.70 (system, thread components)
-- JsonCpp
-- C++20 compiler with `-fcoroutines` (GCC 13+)
+- `main_server.cpp` / `main_jsonclient.cpp` live at the repo root, not under `src/`. CMake only globs `src/*.cpp` for the library sources; entry-point files are listed explicitly.
+- `plan.md` and `custom.md` are author-local design notes; they are not authoritative API documentation.
+- `.vscode/c_cpp_properties.json` is the source of truth for IDE include paths.

@@ -42,6 +42,8 @@ awaitable<void> CServer::StartAcceptLoop()
             std::cerr << "accept error" << ec.message() << std::endl;
             continue;
         }
+        boost::system::error_code opt_ec;
+        new_session->GetSocket().set_option(tcp::no_delay(true), opt_ec);
         new_session->Start();
         {
             std::lock_guard<std::mutex> lock(_mutex);

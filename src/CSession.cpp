@@ -146,31 +146,24 @@ awaitable<void> CSession::HandleRead()
 
         // Read header
         _recv_head_node->Clear();
-        std::size_t n = 0;
-        try
         {
-            n = co_await async_read(_socket,
-                                    buffer(_recv_head_node->_data, HEAD_TOTAL_LEN),
-                                    use_awaitable);
-        }
-        catch (const boost::system::system_error &ec)
-        {
-            std::cout << "Handle Read Exception code is " << ec.what() << endl;
-            Close();
-            // _server->ClearSession(_uuid);
-            co_return;
-        }
-
-        if (n != HEAD_TOTAL_LEN)
-        {
-            // break;
-            co_return;
+            auto [ec, n] = co_await async_read(_socket,
+                                               buffer(_recv_head_node->_data, HEAD_TOTAL_LEN),
+                                               as_tuple(use_awaitable));
+            if (ec)
+            {
+                Close();
+                co_return;
+            }
+            if (n != HEAD_TOTAL_LEN)
+            {
+                co_return;
+            }
         }
 
         // Parse msg_id
         memcpy(&msg_id, _recv_head_node->_data, HEAD_ID_LEN);
         msg_id = boost::asio::detail::socket_ops::network_to_host_short(msg_id);
-        std::cout << "msg_id is " << msg_id << endl;
 
         if (msg_id <= MSG_ID_MIN || msg_id >= MSG_ID_MAX)
         {
@@ -182,7 +175,6 @@ awaitable<void> CSession::HandleRead()
         // Parse msg_len
         memcpy(&msg_len, _recv_head_node->_data + HEAD_ID_LEN, HEAD_DATA_LEN);
         msg_len = boost::asio::detail::socket_ops::network_to_host_short(msg_len);
-        std::cout << "msg_len is " << msg_len << endl;
 
         if (msg_len > MAX_LENGTH)
         {
@@ -194,29 +186,24 @@ awaitable<void> CSession::HandleRead()
         _recv_msg_node = make_shared<RecvNode>(msg_len, msg_id);
 
         // Read msg body
-        try
         {
-            n = co_await async_read(_socket,
-                                    buffer(_recv_msg_node->_data, msg_len),
-                                    use_awaitable);
-        }
-        catch (const boost::system::system_error &ec)
-        {
-            std::cout << "Handle Read Exception code is " << ec.what() << endl;
-            Close();
-            // _server->ClearSession(_uuid);
-            co_return;
-        }
-
-        if (n != static_cast<std::size_t>(msg_len))
-        {
-            break;
+            auto [ec, n] = co_await async_read(_socket,
+                                               buffer(_recv_msg_node->_data, msg_len),
+                                               as_tuple(use_awaitable));
+            if (ec)
+            {
+                Close();
+                co_return;
+            }
+            if (n != static_cast<std::size_t>(msg_len))
+            {
+                break;
+            }
         }
 
         _recv_msg_node->_cur_len = msg_len;
         _recv_msg_node->_data[msg_len] = '\0';
 
-        // 处理消息（放在try之外，避免捕获PostMsgToQue的异常）
         LogicSystem::GetInstance()->PostMsgToQue(
             make_shared<LogicNode>(shared_from_this(), _recv_msg_node));
     }
