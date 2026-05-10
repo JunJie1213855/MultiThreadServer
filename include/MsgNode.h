@@ -19,9 +19,11 @@ public:
 
 	~MsgNode()
 	{
-		// std::cout << "destruct MsgNode" << endl;
 		delete[] _data;
 	}
+
+	MsgNode(const MsgNode &) = delete;
+	MsgNode &operator=(const MsgNode &) = delete;
 
 	void Clear()
 	{

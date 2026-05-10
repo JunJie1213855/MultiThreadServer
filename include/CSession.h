@@ -36,7 +36,6 @@ private:
 private:
 	tcp::socket _socket;
 	std::string _uuid;
-	char _data[MAX_LENGTH];
 	CServer *_server;
 	bool _b_close;
 	std::queue<std::shared_ptr<SendNode>> _send_que;
