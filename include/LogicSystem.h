@@ -3,12 +3,8 @@
 
 #include <queue>
 #include <thread>
-#include <queue>
 #include <map>
 #include <functional>
-#include <json/json.h>
-#include <json/value.h>
-#include <json/reader.h>
 #include "CSession.h"
 #include "const.h"
 #include "Singleton.h"
@@ -25,7 +21,7 @@ public:
 private:
 	LogicSystem();
 	void RegisterCallBacks();
-	void HelloWordCallBack(std::shared_ptr<CSession> session, short msg_id, std::string msg_data);
+	void HelloWordCallBack(std::shared_ptr<CSession> session, short msg_id, const std::string &msg_data);
 
 private:
 	std::map<short, FunCallBack> _fun_callbacks; // 存储 msgid 对应的处理方法函数

@@ -30,7 +30,10 @@ endif()
 
 # 查找 Boost 库
 find_package(Boost REQUIRED COMPONENTS system thread)
-find_package(jsoncpp REQUIRED)
+
+# RapidJSON 是 header-only，只需找头文件路径
+find_path(RAPIDJSON_INCLUDE_DIR rapidjson/document.h REQUIRED)
+message(STATUS "RapidJSON include dir: ${RAPIDJSON_INCLUDE_DIR}")
 
 # 查找 jemalloc（通过 find_library）
 find_library(JEMALLOC_LIBRARY NAMES jemalloc)
@@ -43,6 +46,7 @@ endif()
 
 include_directories(
     ${CMAKE_SOURCE_DIR}/include
+    ${RAPIDJSON_INCLUDE_DIR}
 )
 
 # 源文件
@@ -60,7 +64,6 @@ target_link_libraries(ThreadPoolServer
     Boost::system
     Boost::thread
     pthread
-    JsonCpp::JsonCpp
 )
 if(JEMALLOC_LIBRARY)
     target_link_libraries(ThreadPoolServer ${JEMALLOC_LIBRARY})
@@ -72,5 +75,4 @@ target_link_libraries(main_jsonclient
     Boost::system
     Boost::thread
     pthread
-    JsonCpp::JsonCpp
 )

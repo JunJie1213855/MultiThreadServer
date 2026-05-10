@@ -1,7 +1,9 @@
 #include <iostream>
 #include <boost/asio.hpp>
 #include <thread>
-#include <json/json.h>
+#include <rapidjson/document.h>
+#include <rapidjson/stringbuffer.h>
+#include <rapidjson/writer.h>
 #include <chrono>
 #include <mutex>
 
@@ -36,21 +38,20 @@ void client_thread(int thread_id)
             return; // void 函数，直接 return
         }
 
-        Json::Value root;
-        Json::Reader reader;
-
         for (int i = 0; i < 500; i++)
         {
             // 构造消息
-            root["id"] = 1001;
-            root["data"] = "hello world";
+            rapidjson::Document doc;
+            doc.SetObject();
+            auto &alloc = doc.GetAllocator();
+            doc.AddMember("id", 1001, alloc);
+            doc.AddMember("data", "hello world", alloc);
 
-            // std::string request = root.toStyledString();
-            Json::StreamWriterBuilder builder;
-            builder["indentation"] = "";
+            rapidjson::StringBuffer sb;
+            rapidjson::Writer<rapidjson::StringBuffer> writer(sb);
+            doc.Accept(writer);
 
-            std::string request =
-                Json::writeString(builder, root);
+            std::string request(sb.GetString(), sb.GetSize());
 
             size_t request_length = request.length();
 
@@ -89,12 +90,13 @@ void client_thread(int thread_id)
             if (msg_len != static_cast<size_t>(recv_len))
                 break;
 
-            reader.parse(std::string(msg, msg_len), root);
+            rapidjson::Document resp;
+            resp.Parse(msg, msg_len);
+            if (!resp.HasParseError() && resp.IsObject())
             {
-                // std::lock_guard<std::mutex> lock(cout_mutex);
                 std::cout << "[thread " << thread_id << "] i=" << i
-                          << " id=" << root["id"]
-                          << " data=" << root["data"] << "\n";
+                          << " id=" << resp["id"].GetInt()
+                          << " data=" << resp["data"].GetString() << "\n";
             }
         }
     }

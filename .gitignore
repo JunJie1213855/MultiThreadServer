@@ -1,4 +1,5 @@
 *.vcxproj*
-build
+build*
 .claude
 .vscode
+build_cc
