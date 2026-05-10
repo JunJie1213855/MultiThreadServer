@@ -61,8 +61,10 @@ target_link_libraries(ThreadPoolServer
     Boost::thread
     pthread
     JsonCpp::JsonCpp
-    ${JEMALLOC_LIBRARY}
 )
+if(JEMALLOC_LIBRARY)
+    target_link_libraries(ThreadPoolServer ${JEMALLOC_LIBRARY})
+endif()
 
 
 add_executable(main_jsonclient main_jsonclient.cpp)
