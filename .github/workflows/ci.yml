@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  push:
+    branches: ["main", "main_OLPT"]
+  pull_request:
+
+jobs:
+  # ── Job 1: 正常构建 + smoke test + 静态分析 ──────────────────────────
+  build:
+    name: Build & Test
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y \
+            gcc-13 g++-13 \
+            libboost-system-dev libboost-thread-dev \
+            libjsoncpp-dev \
+            liburing-dev \
+            cppcheck
+
+      - name: Configure
+        run: |
+          cmake -B build \
+            -DCMAKE_CXX_COMPILER=g++-13 \
+            -DBUILD_OPTIM=OFF \
+            -DCMAKE_CXX_FLAGS="-Wall -Wextra -Wpedantic"
+
+      - name: Build
+        run: cmake --build build -j$(nproc)
+
+      # 启动 server，跑完整客户端负载（200 线程 × 500 次），再关掉
+      - name: Smoke test
+        run: |
+          ./build/ThreadPoolServer &
+          SERVER_PID=$!
+          sleep 1
+          ./build/main_jsonclient
+          CLIENT_EXIT=$?
+          kill $SERVER_PID 2>/dev/null || true
+          exit $CLIENT_EXIT
+
+      - name: Static analysis (cppcheck)
+        run: |
+          cppcheck --enable=warning,performance,portability \
+            --suppress=missingIncludeSystem \
+            --error-exitcode=1 \
+            -I include src/
+
+  # ── Job 2: ASan + UBSan（不开 io_uring，避免 liburing 与 sanitizer 冲突）─
+  sanitizers:
+    name: ASan + UBSan
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y \
+            gcc-13 g++-13 \
+            libboost-system-dev libboost-thread-dev \
+            libjsoncpp-dev
+
+      - name: Configure
+        run: |
+          cmake -B build-san \
+            -DCMAKE_CXX_COMPILER=g++-13 \
+            -DBUILD_OPTIM=OFF \
+            -DBUILD_WITH_URING=OFF \
+            -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -g"
+
+      - name: Build
+        run: cmake --build build-san -j$(nproc)
+
+      - name: Smoke test (with sanitizers)
+        env:
+          ASAN_OPTIONS: abort_on_error=1:halt_on_error=1
+          UBSAN_OPTIONS: abort_on_error=1:halt_on_error=1:print_stacktrace=1
+        run: |
+          ./build-san/ThreadPoolServer &
+          SERVER_PID=$!
+          sleep 1
+          ./build-san/main_jsonclient
+          CLIENT_EXIT=$?
+          kill $SERVER_PID 2>/dev/null || true
+          exit $CLIENT_EXIT
