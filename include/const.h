@@ -8,11 +8,11 @@
 // #define MAX_RECVQUE 10000
 // #define MAX_SENDQUE 1000
 
-constexpr int MAX_LENGTH = 1024 * 2;
-constexpr int HEAD_TOTAL_LEN = 4;
-constexpr int HEAD_ID_LEN = 2;
-constexpr int HEAD_DATA_LEN = 2;
-constexpr int MAX_RECVQUE = 10000;
-constexpr int MAX_SENDQUE = 1000;
+inline constexpr int MAX_LENGTH = 1024 * 2;
+inline constexpr int HEAD_TOTAL_LEN = 4;
+inline constexpr int HEAD_ID_LEN = 2;
+inline constexpr int HEAD_DATA_LEN = 2;
+inline constexpr int MAX_RECVQUE = 10000;
+inline constexpr int MAX_SENDQUE = 1000;
 
 #endif
