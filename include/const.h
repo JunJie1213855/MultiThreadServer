@@ -15,12 +15,4 @@ constexpr int HEAD_DATA_LEN = 2;
 constexpr int MAX_RECVQUE = 10000;
 constexpr int MAX_SENDQUE = 1000;
 
-
-enum MSG_IDS
-{
-	MSG_ID_MIN = 1000,
-	MSG_HELLO_WORD = 1001,
-	MSG_ID_MAX
-};
-
 #endif

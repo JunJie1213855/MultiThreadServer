@@ -1,7 +1,6 @@
 #include "CServer.h"
 #include "CSession.h"
 #include <iostream>
-#include "AsioThreadPool.h"
 
 using namespace boost::asio;
 
@@ -18,18 +17,19 @@ CServer::CServer(short port)
 
 CServer::~CServer()
 {
+    // 先停掉 acceptor 与线程池并 join 所有线程，确保所有成员析构前已无运行中的协程。
     _io_context.stop();
     if (_acceptor_thread.joinable())
         _acceptor_thread.join();
+    pool_.stop();
     std::cout << "Server destruct listen on port : " << _port << std::endl;
 }
 
 awaitable<void> CServer::StartAcceptLoop()
 {
-    auto pool = AsioThreadPool::GetInstance();
     for (;;)
     {
-        auto &io_ctx = pool->GetNextIOService();
+        auto &io_ctx = pool_.next_io_context();
         auto new_session = std::make_shared<CSession>(io_ctx, this);
         // auto &socket = new_session->GetSocket();
 
@@ -57,4 +57,9 @@ void CServer::ClearSession(std::string uuid)
     // std::lock_guard<std::mutex> lock(_mutex);
     boost::asio::post(_acceptor.get_executor(), [this, uuid = std::move(uuid)]
                       { this->_sessions.erase(uuid); });
+}
+
+void CServer::on_message(short msg_id, mts::Dispatcher::Handler handler)
+{
+    dispatcher_.on(msg_id, std::move(handler));
 }

@@ -7,7 +7,8 @@
 #include "const.h"
 using boost::asio::ip::tcp;
 
-class LogicSystem;
+namespace mts { class Dispatcher; }
+
 class MsgNode
 {
 public:
@@ -38,7 +39,7 @@ public:
 
 class RecvNode : public MsgNode
 {
-	friend class LogicSystem;
+	friend class mts::Dispatcher;
 
 public:
 	RecvNode(short max_len, short msg_id);
@@ -49,7 +50,7 @@ private:
 
 class SendNode : public MsgNode
 {
-	friend class LogicSystem;
+	friend class mts::Dispatcher;
 	friend class CSession;
 
 public:

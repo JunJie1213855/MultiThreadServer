@@ -1,7 +1,6 @@
 #include "CSession.h"
 #include "CServer.h"
 #include <iostream>
-#include "LogicSystem.h"
 #include <boost/asio/use_awaitable.hpp>
 
 using namespace std;
@@ -157,16 +156,10 @@ awaitable<void> CSession::HandleRead()
             }
         }
 
-        // Parse msg_id
+        // Parse msg_id —— 框架不再校验 msg_id 范围（那是业务语义）：
+        // 未注册的 msg_id 在 Dispatcher 中是无害的 no-op。
         memcpy(&msg_id, _recv_head_node->_data, HEAD_ID_LEN);
         msg_id = boost::asio::detail::socket_ops::network_to_host_short(msg_id);
-
-        if (msg_id <= MSG_ID_MIN || msg_id >= MSG_ID_MAX)
-        {
-            std::cout << "invalid msg_id is " << msg_id << endl;
-            _server->ClearSession(_uuid);
-            co_return;
-        }
 
         // Parse msg_len
         memcpy(&msg_len, _recv_head_node->_data + HEAD_ID_LEN, HEAD_DATA_LEN);
@@ -200,12 +193,6 @@ awaitable<void> CSession::HandleRead()
         _recv_msg_node->_cur_len = msg_len;
         _recv_msg_node->_data[msg_len] = '\0';
 
-        LogicSystem::GetInstance()->PostMsgToQue(
-            make_shared<LogicNode>(shared_from_this(), _recv_msg_node));
+        _server->dispatcher().dispatch(shared_from_this(), _recv_msg_node);
     }
-}
-
-LogicNode::LogicNode(std::shared_ptr<CSession> session,
-                     std::shared_ptr<RecvNode> recvnode) : _session(session), _recvnode(recvnode)
-{
 }
