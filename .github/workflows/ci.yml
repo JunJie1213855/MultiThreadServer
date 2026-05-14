@@ -38,10 +38,10 @@ jobs:
       # 启动 server，跑完整客户端负载（200 线程 × 500 次），再关掉
       - name: Smoke test
         run: |
-          ./build/ThreadPoolServer &
+          ./build/echo_server &
           SERVER_PID=$!
           sleep 1
-          ./build/main_jsonclient
+          ./build/load_client
           CLIENT_EXIT=$?
           kill $SERVER_PID 2>/dev/null || true
           exit $CLIENT_EXIT
@@ -87,10 +87,10 @@ jobs:
           ASAN_OPTIONS: abort_on_error=1:halt_on_error=1
           UBSAN_OPTIONS: abort_on_error=1:halt_on_error=1:print_stacktrace=1
         run: |
-          ./build-san/ThreadPoolServer &
+          ./build-san/echo_server &
           SERVER_PID=$!
           sleep 1
-          ./build-san/main_jsonclient
+          ./build-san/load_client
           CLIENT_EXIT=$?
           kill $SERVER_PID 2>/dev/null || true
           exit $CLIENT_EXIT

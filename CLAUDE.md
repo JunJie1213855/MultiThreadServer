@@ -21,9 +21,9 @@ CMake options (defined in `CMakeLists.txt`):
 - `BUILD_WITH_URING=ON` (default) — defines `BOOST_ASIO_HAS_IO_URING`. Disable on systems without liburing.
 - `BUILD_OPTIM=ON` (default) — adds `-O3 -march=native -ffast-math -ftree-vectorize`. Disable for debug builds.
 
-Compiler requirements: GCC 13+ (the build forces `-fcoroutines` for GCC; C++20 stackless coroutines are required throughout). Dependencies: Boost ≥ 1.70 (`system`, `thread`), JsonCpp, optional jemalloc (auto-detected via `find_library`).
+Compiler requirements: GCC 13+ (the build forces `-fcoroutines` for GCC; C++20 stackless coroutines are required throughout). Dependencies: Boost ≥ 1.70 (`system`, `thread`), RapidJSON (header-only, located via `find_path` — only used in `LogicSystem.cpp`), optional jemalloc (auto-detected via `find_library`).
 
-There is no test target wired up in CMake — `main_jsonclient` is the de-facto load test.
+There is no `ctest` target wired up in CMake — `main_jsonclient` is the de-facto load test. CI (`.github/workflows/ci.yml`) builds with GCC 13 and `-Wall -Wextra -Wpedantic`, runs `main_jsonclient` against the server as a smoke test, repeats it under ASan+UBSan (that job must set `BUILD_WITH_URING=OFF` — liburing conflicts with the sanitizers), and runs `cppcheck`.
 
 ## Architecture
 
@@ -58,5 +58,5 @@ Sessions are kept alive by `_sessions` (keyed by UUID) on `CServer` and by `shar
 ## Repo notes
 
 - `main_server.cpp` / `main_jsonclient.cpp` live at the repo root, not under `src/`. CMake only globs `src/*.cpp` for the library sources; entry-point files are listed explicitly.
-- `plan.md` and `custom.md` are author-local design notes; they are not authoritative API documentation.
+- `advice.md` is author-local optimization notes (hot-path perf + architecture suggestions); it is not authoritative API documentation, and parts of it are already stale (e.g. `TCP_NODELAY` is now set in `StartAcceptLoop`).
 - `.vscode/c_cpp_properties.json` is the source of truth for IDE include paths.
