@@ -94,3 +94,45 @@ jobs:
           CLIENT_EXIT=$?
           kill $SERVER_PID 2>/dev/null || true
           exit $CLIENT_EXIT
+
+  # ── Job 3: 安装 mts 到临时前缀，再用 find_package(mts) 构建消费者 ──────
+  install-consumer-smoke:
+    name: Install + consumer smoke
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y \
+            gcc-13 g++-13 \
+            libboost-system-dev libboost-thread-dev \
+            liburing-dev
+
+      - name: Configure + build + install mts
+        run: |
+          cmake -B build \
+            -DCMAKE_CXX_COMPILER=g++-13 \
+            -DBUILD_OPTIM=OFF \
+            -DMTS_BUILD_EXAMPLES=OFF \
+            -DCMAKE_INSTALL_PREFIX="$PWD/_install"
+          cmake --build build -j$(nproc)
+          cmake --install build
+
+      - name: Build consumer fixture against installed mts
+        run: |
+          cmake -S tests/consumer -B build-consumer \
+            -DCMAKE_CXX_COMPILER=g++-13 \
+            -DCMAKE_PREFIX_PATH="$PWD/_install"
+          cmake --build build-consumer -j$(nproc)
+          ./build-consumer/consumer
+
+      - name: Assert export has no absolute build-tree paths
+        run: |
+          if grep -rn "$PWD/build" _install/lib/cmake/mts/; then
+            echo "FAIL: exported config leaks absolute build-tree paths"
+            exit 1
+          fi
+          echo "export config is relocatable"

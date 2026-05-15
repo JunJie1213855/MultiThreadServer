@@ -34,7 +34,7 @@ void client_thread(int thread_id)
         if (error)
         {
             // std::lock_guard<std::mutex> lock(cout_mutex);
-            std::cout << "connect failed: " << error.message() << "\n";
+            // std::cout << "connect failed: " << error.message() << "\n";
             return; // void 函数，直接 return
         }
 
@@ -94,16 +94,16 @@ void client_thread(int thread_id)
             resp.Parse(msg, msg_len);
             if (!resp.HasParseError() && resp.IsObject())
             {
-                std::cout << "[thread " << thread_id << "] i=" << i
-                          << " id=" << resp["id"].GetInt()
-                          << " data=" << resp["data"].GetString() << "\n";
+                // std::cout << "[thread " << thread_id << "] i=" << i
+                //           << " id=" << resp["id"].GetInt()
+                //           << " data=" << resp["data"].GetString() << "\n";
             }
         }
     }
     catch (std::exception &e)
     {
         // std::lock_guard<std::mutex> lock(cout_mutex);
-        std::cerr << "Exception: " << e.what() << "\n";
+        // std::cerr << "Exception: " << e.what() << "\n";
     }
 }
 
@@ -112,7 +112,7 @@ int main()
     auto start = std::chrono::high_resolution_clock::now();
 
     std::vector<std::thread> threads;
-    for (int i = 0; i < 200; i++)
+    for (int i = 0; i < 800; i++)
     {
         threads.emplace_back(client_thread, i);
     }

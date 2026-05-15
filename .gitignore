@@ -3,3 +3,4 @@ build*
 .claude
 .vscode
 build_cc
+plan.md

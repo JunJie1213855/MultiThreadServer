@@ -1,0 +1,14 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+find_dependency(Boost REQUIRED COMPONENTS system thread)
+find_dependency(Threads)
+
+include("${CMAKE_CURRENT_LIST_DIR}/mtsTargets.cmake")
+
+# 便捷别名：mts::mts -> 动态库（与构建树中的 add_library(mts::mts ALIAS ...) 对应）
+if(NOT TARGET mts::mts)
+    add_library(mts::mts ALIAS mts::mts-shared)
+endif()
+
+check_required_components(mts)
