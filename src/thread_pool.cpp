@@ -4,7 +4,7 @@
 namespace mts
 {
 
-ThreadPool::ThreadPool(int thread_num, bool pin_threads)
+ContextThreadPool::ContextThreadPool(int thread_num, bool pin_threads)
 	: _next_index(0),
 	  _threadNum(thread_num > 0
 					 ? thread_num
@@ -34,18 +34,18 @@ ThreadPool::ThreadPool(int thread_num, bool pin_threads)
 	}
 }
 
-ThreadPool::~ThreadPool()
+ContextThreadPool::~ContextThreadPool()
 {
 	stop();
 }
 
-boost::asio::io_context &ThreadPool::next_io_context()
+boost::asio::io_context &ContextThreadPool::next_io_context()
 {
 	size_t idx = _next_index.fetch_add(1, std::memory_order_relaxed) % _io_contexts.size();
 	return *_io_contexts[idx];
 }
 
-void ThreadPool::stop()
+void ContextThreadPool::stop()
 {
 	for (auto &work : _works)
 	{

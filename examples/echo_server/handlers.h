@@ -3,11 +3,11 @@
 
 namespace mts
 {
-	class Server;
+	class TCPServer;
 }
 
 // 把 echo_server 的业务 handler 注册到 server 上。
 // 必须在 server.run() 之前调用。
-void register_handlers(mts::Server &server);
+void register_handlers(mts::TCPServer &server);
 
 #endif

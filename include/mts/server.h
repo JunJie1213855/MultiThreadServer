@@ -19,16 +19,16 @@ namespace mts
 	//
 	// 典型用法：
 	//   mts::ServerConfig cfg; cfg.port = 12345;
-	//   mts::Server s(cfg);
+	//   mts::TCPServer s(cfg);
 	//   s.on_message(id, handler);   // 必须在 run() 之前
 	//   s.run();                     // 阻塞
-	class Server
+	class TCPServer
 	{
 	public:
-		explicit Server(ServerConfig config);
-		~Server();
-		Server(const Server &) = delete;
-		Server &operator=(const Server &) = delete;
+		explicit TCPServer(ServerConfig config);
+		~TCPServer();
+		TCPServer(const TCPServer &) = delete;
+		TCPServer &operator=(const TCPServer &) = delete;
 
 		// 注册消息 handler。契约：所有 on_message 必须 happen-before run()。
 		void on_message(short msg_id, Dispatcher::Handler handler);
@@ -38,7 +38,7 @@ namespace mts
 		// 可从任意线程调用（含信号处理线程），让 run() 尽快返回并停止线程池。
 		void stop();
 
-		// 以下供 Session 内部使用
+		// 以下供 TCPSession 内部使用
 		void clear_session(const std::string &uuid);
 		Dispatcher &dispatcher() noexcept { return dispatcher_; }
 		const ServerConfig &config() const noexcept { return config_; }
@@ -49,11 +49,11 @@ namespace mts
 		ServerConfig config_;
 		boost::asio::io_context acceptor_ctx_;
 		boost::asio::ip::tcp::acceptor acceptor_;
-		// pool_ 在 sessions_ 之前声明：析构时 sessions_ 先释放（放掉 Server 持有的
+		// pool_ 在 sessions_ 之前声明：析构时 sessions_ 先释放（放掉 TCPServer 持有的
 		// session 引用），pool_ 后析构（其 io_context 被销毁时丢弃残留的 handler）。
-		ThreadPool pool_;
+		ContextThreadPool pool_;
 		Dispatcher dispatcher_;
-		std::map<std::string, std::shared_ptr<Session>> sessions_;
+		std::map<std::string, std::shared_ptr<TCPSession>> sessions_;
 		std::mutex mutex_;
 	};
 

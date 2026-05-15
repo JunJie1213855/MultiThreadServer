@@ -5,7 +5,7 @@
 //
 // 用法：
 //   mts::ServerConfig cfg; cfg.port = 12345;
-//   mts::Server server(cfg);
+//   mts::TCPServer server(cfg);
 //   server.on_message(MY_MSG_ID, my_handler);   // 必须在 run() 之前注册
 //   server.run();                               // 阻塞，直到 stop()
 

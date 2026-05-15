@@ -10,7 +10,7 @@ namespace mts
 	using namespace std;
 	using namespace boost::asio;
 
-	Session::Session(boost::asio::io_context &io_context, Server *server)
+	TCPSession::TCPSession(boost::asio::io_context &io_context, TCPServer *server)
 		: _socket(io_context), _server(server), _b_close(false), _b_head_parse(false)
 	{
 		boost::uuids::uuid a_uuid = boost::uuids::random_generator()();
@@ -18,27 +18,27 @@ namespace mts
 		_recv_head_node = make_shared<MsgNode>(HEAD_TOTAL_LEN);
 	}
 
-	Session::~Session()
+	TCPSession::~TCPSession()
 	{
 	}
 
-	tcp::socket &Session::GetSocket()
+	tcp::socket &TCPSession::GetSocket()
 	{
 		return _socket;
 	}
 
-	std::string &Session::GetUuid()
+	std::string &TCPSession::GetUuid()
 	{
 		return _uuid;
 	}
 
-	void Session::Start()
+	void TCPSession::Start()
 	{
 		co_spawn(_socket.get_executor(), [self = shared_from_this()]
 				 { return self->HandleRead(); }, detached);
 	}
 
-	void Session::Send(std::string msg, short msgid)
+	void TCPSession::Send(std::string msg, short msgid)
 	{
 		boost::asio::post(_socket.get_executor(), [self = shared_from_this(), msg = std::move(msg), msgid]() mutable
 						  {
@@ -57,7 +57,7 @@ namespace mts
     } });
 	}
 
-	void Session::Send(char *msg, short max_length, short msgid)
+	void TCPSession::Send(char *msg, short max_length, short msgid)
 	{
 		boost::asio::post(_socket.get_executor(), [self = shared_from_this(), msg = std::move(msg), max_length, msgid]() mutable
 						  {
@@ -76,7 +76,7 @@ namespace mts
     } });
 	}
 
-	void Session::Close()
+	void TCPSession::Close()
 	{
 		boost::asio::post(_socket.get_executor(), [self = shared_from_this()]
 						  {
@@ -87,12 +87,12 @@ namespace mts
         self->_server->clear_session(self->GetUuid()); });
 	}
 
-	std::shared_ptr<Session> Session::SharedSelf()
+	std::shared_ptr<TCPSession> TCPSession::SharedSelf()
 	{
 		return shared_from_this();
 	}
 
-	awaitable<void> Session::HandleWrite()
+	awaitable<void> TCPSession::HandleWrite()
 	{
 		while (!_b_close) // 不停止且队列不为空
 		{
@@ -135,7 +135,7 @@ namespace mts
 		}
 	}
 
-	awaitable<void> Session::HandleRead()
+	awaitable<void> TCPSession::HandleRead()
 	{
 		while (!_b_close)
 		{

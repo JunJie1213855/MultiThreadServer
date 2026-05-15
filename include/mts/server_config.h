@@ -6,7 +6,7 @@
 namespace mts
 {
 
-	// Server 的构造参数。除 port 外均有合理默认值。
+	// TCPServer 的构造参数。除 port 外均有合理默认值。
 	struct ServerConfig
 	{
 		unsigned short port = 0;			  // 必填：监听端口

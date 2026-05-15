@@ -12,9 +12,9 @@ int main()
 		mts::ServerConfig cfg;
 		cfg.port = 10086;
 
-		// 先创建 Server（其构造会建立线程池的工作线程）。signal_set 必须在
+		// 先创建 TCPServer（其构造会建立线程池的工作线程）。signal_set 必须在
 		// 工作线程之后构造 —— 否则可能拦不到 SIGINT/SIGTERM。
-		mts::Server s(cfg);
+		mts::TCPServer s(cfg);
 
 		// 注册业务消息 handler（必须在 s.run() 之前完成）
 		register_handlers(s);

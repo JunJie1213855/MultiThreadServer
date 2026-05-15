@@ -11,7 +11,7 @@ namespace mts
 	}
 
 	// 把消息投递到 session 对应的 io_context 上处理
-	void Dispatcher::dispatch(std::shared_ptr<Session> session,
+	void Dispatcher::dispatch(std::shared_ptr<TCPSession> session,
 							  std::shared_ptr<RecvNode> recvnode)
 	{
 		boost::asio::post(session->GetSocket().get_executor(),

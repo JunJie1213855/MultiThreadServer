@@ -10,24 +10,24 @@ namespace mts
 	using boost::asio::use_awaitable;
 	using boost::asio::ip::tcp;
 
-	Server::Server(ServerConfig config)
+	TCPServer::TCPServer(ServerConfig config)
 		: config_(config),
 		  acceptor_(acceptor_ctx_, tcp::endpoint(tcp::v4(), config_.port)),
 		  pool_(config_.io_threads, config_.pin_threads)
 	{
-		std::cout << "Server start success, listen on port : " << config_.port << std::endl;
+		std::cout << "TCPServer start success, listen on port : " << config_.port << std::endl;
 		acceptor_.listen();
 	}
 
-	Server::~Server()
+	TCPServer::~TCPServer()
 	{
 		// stop() 是幂等的：确保 acceptor io_context 与线程池都已停止、
 		// 所有线程都已 join，再让成员开始析构。
 		stop();
-		std::cout << "Server destruct listen on port : " << config_.port << std::endl;
+		std::cout << "TCPServer destruct listen on port : " << config_.port << std::endl;
 	}
 
-	void Server::run()
+	void TCPServer::run()
 	{
 		co_spawn(acceptor_ctx_, [this]
 				 { return accept_loop(); }, detached);
@@ -35,7 +35,7 @@ namespace mts
 		acceptor_ctx_.run();
 	}
 
-	void Server::stop()
+	void TCPServer::stop()
 	{
 		// io_context::stop() 线程安全，可从任意线程（含信号处理线程）调用，
 		// 它会让 run() 尽快返回。监听 socket 在 acceptor_ 成员析构时释放 ——
@@ -44,12 +44,12 @@ namespace mts
 		pool_.stop();
 	}
 
-	boost::asio::awaitable<void> Server::accept_loop()
+	boost::asio::awaitable<void> TCPServer::accept_loop()
 	{
 		for (;;)
 		{
 			auto &io_ctx = pool_.next_io_context();
-			auto new_session = std::make_shared<Session>(io_ctx, this);
+			auto new_session = std::make_shared<TCPSession>(io_ctx, this);
 
 			auto [ec] = co_await acceptor_.async_accept(new_session->GetSocket(),
 														boost::asio::as_tuple(use_awaitable));
@@ -73,13 +73,13 @@ namespace mts
 		}
 	}
 
-	void Server::clear_session(const std::string &uuid)
+	void TCPServer::clear_session(const std::string &uuid)
 	{
 		boost::asio::post(acceptor_.get_executor(), [this, uuid]
 						  { sessions_.erase(uuid); });
 	}
 
-	void Server::on_message(short msg_id, Dispatcher::Handler handler)
+	void TCPServer::on_message(short msg_id, Dispatcher::Handler handler)
 	{
 		dispatcher_.on(msg_id, std::move(handler));
 	}

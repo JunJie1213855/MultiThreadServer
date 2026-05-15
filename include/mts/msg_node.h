@@ -8,7 +8,7 @@ namespace mts
 {
 
 	class Dispatcher;
-	class Session;
+	class TCPSession;
 
 	class MsgNode
 	{
@@ -52,7 +52,7 @@ namespace mts
 	class SendNode : public MsgNode
 	{
 		friend class Dispatcher;
-		friend class Session;
+		friend class TCPSession;
 
 	public:
 		SendNode(const char *msg, short max_len, short msg_id);

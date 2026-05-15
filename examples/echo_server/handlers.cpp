@@ -14,7 +14,7 @@ namespace
 {
 
 // 处理 HELLO_WORD 消息：回显并在 data 前加上一段前缀。
-void hello_world(std::shared_ptr<mts::Session> session, short /*msg_id*/, std::string msg_data)
+void hello_world(std::shared_ptr<mts::TCPSession> session, short /*msg_id*/, std::string msg_data)
 {
 	rapidjson::Document doc;
 	if (doc.Parse(msg_data.data(), msg_data.size()).HasParseError())
@@ -40,7 +40,7 @@ void hello_world(std::shared_ptr<mts::Session> session, short /*msg_id*/, std::s
 
 } // namespace
 
-void register_handlers(mts::Server &server)
+void register_handlers(mts::TCPServer &server)
 {
 	server.on_message(MSG_HELLO_WORD, hello_world);
 }
