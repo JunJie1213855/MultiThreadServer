@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: ["main", "main_OLPT"]
+    branches: ["main", "main_OLPT", "mts"]
   pull_request:
 
 jobs:
@@ -35,7 +35,7 @@ jobs:
       - name: Build
         run: cmake --build build -j$(nproc)
 
-      # 启动 server，跑完整客户端负载（200 线程 × 500 次），再关掉
+      # 启动 server，跑完整客户端负载（800 线程 × 500 次），再关掉
       - name: Smoke test
         run: |
           ./build/echo_server &
@@ -68,8 +68,7 @@ jobs:
             gcc-13 g++-13 \
             libboost-system-dev libboost-thread-dev \
             rapidjson-dev \
-            libjsoncpp-dev \
-            libjemalloc-dev \
+            libjemalloc-dev
 
       - name: Configure
         run: |
